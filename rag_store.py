@@ -1,19 +1,19 @@
 """Vector store for FAQ / document chunks using sqlite-vec.
 
-The whole RAG pipeline lives in a single SQLite file (rag.db, next to this module)
-— no external vector DB, no services, no Docker. Each tenant has its own isolated
-set of chunks, embedded locally with sentence-transformers ("all-MiniLM-L6-v2",
-384-dim), so embeddings are free and require no API calls.
+The vector store lives in a single SQLite file (rag.db) — no external vector DB, no
+services, no Docker. Each tenant has its own isolated set of chunks. Embeddings are
+computed by the hosted Jina API (see embeddings.py), so the backend carries no
+PyTorch and stays light enough for a 1 GB container.
 
   INGEST:  PDF / raw text -> extract -> chunk (overlapping) -> embed -> store.
   QUERY:   text -> embed -> KNN search -> top-K most similar chunks.
 
-Vectors are L2-normalized at encode time, so the L2 distance used by sqlite-vec is
-monotonic with cosine similarity — ordering by ascending distance == most similar
-first.
+Vectors come back L2-normalized from the API, so the L2 distance used by sqlite-vec
+is monotonic with cosine similarity — ordering by ascending distance == most
+similar first.
 
-Every function here is synchronous and blocking (model inference + SQLite I/O).
-Async callers (the FastAPI server, the FAQAgent) offload them with
+The SQLite I/O here is synchronous and blocking, and the embedding calls are
+blocking HTTP. Async callers (the FastAPI server, the FAQAgent) offload them with
 `asyncio.to_thread`, matching the concurrency pattern used elsewhere in the app.
 """
 
@@ -22,23 +22,18 @@ import os
 import re
 import sqlite3
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import numpy as np
 import sqlite_vec
 
-if TYPE_CHECKING:  # heavy import (sentence-transformers -> torch) deferred to runtime
-    from sentence_transformers import SentenceTransformer
+from embeddings import EMBEDDING_DIM, EmbeddingError, embed_documents, embed_query
 
 log = logging.getLogger("blip-agent.rag")
 
-EMBEDDING_MODEL = "all-MiniLM-L6-v2"
-EMBEDDING_DIM = 384       # output dimension of all-MiniLM-L6-v2
 CHUNK_SIZE = 500          # approx tokens per chunk (chars / 4 proxy)
 CHUNK_OVERLAP = 50        # approx tokens of overlap between consecutive chunks
-TOP_K = 5                 # chunks retrieved per query (higher recall — the
-                          # embedding model is weak on PT, so over-retrieve and
-                          # let the LLM pick the relevant chunk from the set)
+TOP_K = 5                 # chunks retrieved per query (higher recall — over-retrieve
+                          # and let the LLM pick the relevant chunk from the set)
 
 # Single-file store (mirrors database.py's products.db). Honors DB_DIR so it can
 # live on a Railway volume; otherwise sits next to this module, independent of the
@@ -46,24 +41,6 @@ TOP_K = 5                 # chunks retrieved per query (higher recall — the
 _DB_DIR = Path(os.getenv("DB_DIR") or Path(__file__).parent)
 _DB_DIR.mkdir(parents=True, exist_ok=True)
 DEFAULT_DB_PATH = str(_DB_DIR / "rag.db")
-
-_model: "SentenceTransformer | None" = None
-
-
-def get_embedding_model() -> "SentenceTransformer":
-    """Lazily load the embedding model once.
-
-    The sentence-transformers/torch import happens here (not at module import) and
-    the first call downloads the ~80MB model. Deferring it means a missing or broken
-    torch install only breaks embedding calls — the app still imports and starts.
-    """
-    global _model
-    if _model is None:
-        from sentence_transformers import SentenceTransformer
-
-        log.info("Loading embedding model %s ...", EMBEDDING_MODEL)
-        _model = SentenceTransformer(EMBEDDING_MODEL)
-    return _model
 
 
 def get_vec_connection(db_path: str = DEFAULT_DB_PATH) -> sqlite3.Connection:
@@ -265,8 +242,7 @@ def _delete_existing(conn: sqlite3.Connection, tenant_id: str, source_name: str)
 def _embed_and_store(conn: sqlite3.Connection, tenant_id: str, source_name: str,
                      chunks: list[str]) -> None:
     """Embed `chunks` and insert them + their vectors into the DB. No commit."""
-    model = get_embedding_model()
-    embeddings = model.encode(chunks, show_progress_bar=False, normalize_embeddings=True)
+    embeddings = embed_documents(chunks)
     for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
         cursor = conn.execute(
             "INSERT INTO chunks (tenant_id, source_name, chunk_index, content) "
@@ -356,9 +332,16 @@ def search_chunks(tenant_id: str, query: str, top_k: int = TOP_K,
     Returns a list of {content, source_name, chunk_index, score}. `score` is the L2
     distance (lower == more similar). The KNN runs over the whole store, so we
     over-fetch (top_k * 3) and keep the closest top_k that belong to this tenant.
+
+    If the embedding API is unreachable, returns [] so the FAQAgent degrades
+    gracefully (answers from its base prompt / hands off) instead of failing the
+    request.
     """
-    model = get_embedding_model()
-    query_embedding = model.encode([query], normalize_embeddings=True)[0]
+    try:
+        query_embedding = embed_query(query)
+    except EmbeddingError as e:
+        log.warning("Embedding indisponível para a busca RAG: %s", e)
+        return []
 
     conn = get_vec_connection(db_path)
     try:

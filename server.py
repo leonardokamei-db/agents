@@ -28,6 +28,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from database import list_products, seed_database
+from embeddings import EmbeddingError
 from llm_client import GroqLLMClient
 from orchestrator import Orchestrator
 from rag_store import (
@@ -290,8 +291,8 @@ async def chat(req: ChatRequest, x_api_key: Optional[str] = Header(default=None,
 
 # --------------------------------------------------------------------------- #
 # RAG knowledge base — PDF/text ingestion + source management.
-# Embedding + chunking are blocking (sentence-transformers + SQLite), so they run
-# in a worker thread to keep the event loop responsive — same pattern as the LLM.
+# Embedding (Jina API call) + chunking + SQLite I/O are blocking, so they run in a
+# worker thread to keep the event loop responsive — same pattern as the LLM.
 # --------------------------------------------------------------------------- #
 
 
@@ -315,6 +316,8 @@ async def ingest_pdf_endpoint(
         result = await asyncio.to_thread(ingest_pdf, tenant_id, tmp_path, source_name)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except EmbeddingError as e:
+        raise HTTPException(status_code=503, detail=str(e))
     finally:
         os.unlink(tmp_path)
     return result
@@ -336,6 +339,8 @@ async def ingest_text_endpoint(
         return await asyncio.to_thread(ingest_text, tenant_id, text, source_name)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except EmbeddingError as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
 
 @app.get("/v1/sources/{tenant_id}")
