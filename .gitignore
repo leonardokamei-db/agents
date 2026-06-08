@@ -1,0 +1,16 @@
+.env
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# Generated SQLite databases (schema + demo content re-seeded on startup)
+products.db
+rag.db
+*.db
+test_results.json
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store

@@ -1,0 +1,11 @@
+fastapi>=0.110
+uvicorn[standard]>=0.29
+groq>=0.9
+python-dotenv>=1.0
+
+# RAG pipeline
+python-multipart>=0.0.9   # required by FastAPI for PDF/file upload (multipart form) endpoints
+pypdf>=4.0.0
+sentence-transformers>=2.7.0
+sqlite-vec>=0.1.0
+numpy>=1.26.0

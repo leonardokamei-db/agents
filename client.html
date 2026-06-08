@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Blip Agent — Test Client</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #eceff3;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .app {
+      width: 100%;
+      max-width: 480px;
+      height: 100%;
+      max-height: 760px;
+      display: flex;
+      flex-direction: column;
+      background: #fff;
+      border-radius: 14px;
+      overflow: hidden;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.18);
+    }
+
+    /* Header */
+    header {
+      background: #1c2433;
+      color: #fff;
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    header .title { font-weight: 600; font-size: 15px; flex: 1; }
+    header select {
+      background: #2c3650;
+      color: #fff;
+      border: 1px solid #46506b;
+      border-radius: 8px;
+      padding: 6px 8px;
+      font-size: 13px;
+      outline: none;
+    }
+    header button {
+      background: transparent;
+      color: #cdd6ea;
+      border: 1px solid #46506b;
+      border-radius: 8px;
+      padding: 6px 10px;
+      font-size: 12px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    header button:hover { background: #2c3650; color: #fff; }
+
+    /* Handoff banner */
+    .banner {
+      display: none;
+      background: #fdecea;
+      color: #b3261e;
+      border-bottom: 1px solid #f3c2bd;
+      padding: 10px 16px;
+      font-size: 13px;
+      font-weight: 500;
+    }
+    .banner.show { display: block; }
+    /* Green order-confirmed variant */
+    .banner.order {
+      background: #e7f6ec;
+      color: #1b6b3a;
+      border-bottom: 1px solid #b6e0c5;
+    }
+
+    /* Products panel */
+    .products {
+      border-bottom: 1px solid #e6e9ef;
+      background: #fafbfc;
+      font-size: 12px;
+    }
+    .products summary {
+      cursor: pointer;
+      padding: 8px 16px;
+      font-weight: 600;
+      color: #1c2433;
+      user-select: none;
+      outline: none;
+    }
+    .products summary::-webkit-details-marker { color: #97a0b0; }
+    .products .plist {
+      max-height: 150px;
+      overflow-y: auto;
+      padding: 0 16px 10px;
+    }
+    .product {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 0;
+      border-top: 1px solid #eef1f5;
+    }
+    .product .pname { flex: 1; color: #1c2433; }
+    .product .pprice { color: #2f6df6; font-weight: 600; white-space: nowrap; }
+    .product .pstock {
+      border-radius: 6px;
+      padding: 1px 6px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .pstock.ok { background: #e7f6ec; color: #1b6b3a; }
+    .pstock.low { background: #fff3d6; color: #8a6100; }
+    .pstock.out { background: #fdecea; color: #b3261e; }
+
+    /* Knowledge base panel */
+    .kb {
+      border-bottom: 1px solid #e6e9ef;
+      background: #fafbfc;
+      font-size: 12px;
+    }
+    .kb summary {
+      cursor: pointer;
+      padding: 8px 16px;
+      font-weight: 600;
+      color: #1c2433;
+      user-select: none;
+      outline: none;
+    }
+    .kb summary::-webkit-details-marker { color: #97a0b0; }
+    .kb .kb-body { max-height: 260px; overflow-y: auto; padding: 0 16px 12px; }
+    .kb .src {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 0;
+      border-top: 1px solid #eef1f5;
+    }
+    .kb .src .sname { flex: 1; color: #1c2433; font-weight: 600; }
+    .kb .src .smeta { color: #97a0b0; white-space: nowrap; font-size: 11px; }
+    .kb .src button {
+      background: #fdecea; color: #b3261e; border: 1px solid #f3c2bd;
+      border-radius: 6px; padding: 1px 7px; cursor: pointer; font-size: 11px; font-weight: 600;
+    }
+    .kb .src button:hover { background: #f9d7d2; }
+    .kb .empty { color: #97a0b0; padding: 6px 0; }
+    .kb form {
+      display: flex; flex-direction: column; gap: 6px;
+      margin-top: 10px; padding-top: 10px; border-top: 1px dashed #dfe3ea;
+    }
+    .kb .kb-form-title { font-weight: 600; color: #44506a; }
+    .kb input[type=text], .kb textarea, .kb input[type=file] {
+      width: 100%; border: 1px solid #d4d9e2; border-radius: 8px;
+      padding: 6px 8px; font-size: 12px; font-family: inherit; outline: none;
+    }
+    .kb input[type=text]:focus, .kb textarea:focus { border-color: #2f6df6; }
+    .kb textarea { resize: vertical; min-height: 54px; }
+    .kb .kb-btn {
+      background: #2f6df6; color: #fff; border: none; border-radius: 8px;
+      padding: 7px 12px; font-size: 12px; font-weight: 600; cursor: pointer;
+    }
+    .kb .kb-btn:disabled { background: #9bbafb; cursor: not-allowed; }
+    .kb .kb-status { font-size: 11px; color: #1b6b3a; min-height: 14px; margin-top: 6px; }
+    .kb .kb-status.err { color: #b3261e; }
+
+    /* RAG source badges in the assistant meta line */
+    .rag-badge {
+      background: #eaf7ef; color: #1b6b3a; border: 1px solid #b6e0c5;
+      border-radius: 6px; padding: 1px 6px; font-weight: 600;
+    }
+    .rag-none { color: #97a0b0; font-style: italic; }
+
+    /* Chat area */
+    .chat {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      background: #fff;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .row { display: flex; flex-direction: column; margin-bottom: 8px; }
+    .row.user { align-items: flex-end; }
+    .row.assistant { align-items: flex-start; }
+
+    .bubble {
+      max-width: 78%;
+      padding: 9px 13px;
+      border-radius: 16px;
+      font-size: 14px;
+      line-height: 1.4;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+    .user .bubble {
+      background: #2f6df6;
+      color: #fff;
+      border-bottom-right-radius: 4px;
+    }
+    .assistant .bubble {
+      background: #f1f3f7;
+      color: #1c2433;
+      border-bottom-left-radius: 4px;
+    }
+
+    .meta {
+      font-size: 11px;
+      color: #97a0b0;
+      margin-top: 3px;
+      padding: 0 4px;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .badge {
+      background: #fff3d6;
+      color: #8a6100;
+      border: 1px solid #ffe2a0;
+      border-radius: 6px;
+      padding: 1px 6px;
+      font-weight: 600;
+    }
+    .chip {
+      background: #e7efff;
+      color: #1f4fb0;
+      border: 1px solid #c5d8fb;
+      border-radius: 6px;
+      padding: 1px 6px;
+      font-weight: 600;
+    }
+    .chip.fallback { background: #fdecea; color: #b3261e; border-color: #f3c2bd; }
+    .chip.clarification { background: #f0e9ff; color: #5b39b8; border-color: #ddccfb; }
+    .chip.order { background: #e7f6ec; color: #1b6b3a; border-color: #b6e0c5; }
+    .tool-badge {
+      background: #eef1f5;
+      color: #44506a;
+      border: 1px solid #d8deea;
+      border-radius: 6px;
+      padding: 1px 6px;
+      font-weight: 600;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 10px;
+    }
+
+    .typing { font-style: italic; color: #97a0b0; font-size: 13px; padding: 4px; }
+
+    /* Composer */
+    .composer {
+      display: flex;
+      gap: 8px;
+      padding: 12px;
+      border-top: 1px solid #e6e9ef;
+      background: #fafbfc;
+    }
+    .composer input {
+      flex: 1;
+      border: 1px solid #d4d9e2;
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 14px;
+      outline: none;
+    }
+    .composer input:focus { border-color: #2f6df6; }
+    .composer button {
+      background: #2f6df6;
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      padding: 0 18px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .composer button:disabled { background: #9bbafb; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <span class="title">🤖 Blip Agent</span>
+      <select id="tenant"></select>
+      <button id="reset">Nova conversa</button>
+    </header>
+
+    <div id="banner" class="banner">🔴 Transferindo para atendente humano</div>
+
+    <details id="products" class="products" open>
+      <summary>🛍️ Produtos <span id="productsCount"></span></summary>
+      <div id="productsList" class="plist"></div>
+    </details>
+
+    <details id="kb" class="kb">
+      <summary>📚 Base de conhecimento <span id="kbCount"></span></summary>
+      <div class="kb-body">
+        <div id="kbSources"></div>
+
+        <form id="kbPdfForm">
+          <span class="kb-form-title">Ingerir PDF</span>
+          <input type="file" id="kbPdfFile" accept="application/pdf" />
+          <input type="text" id="kbPdfName" placeholder="Nome da fonte (ex: manual_produto)" autocomplete="off" />
+          <button type="submit" class="kb-btn" id="kbPdfBtn">Ingerir PDF</button>
+        </form>
+
+        <form id="kbTextForm">
+          <span class="kb-form-title">Ingerir texto (teste rápido)</span>
+          <textarea id="kbText" placeholder="Cole aqui o texto da base de conhecimento..."></textarea>
+          <input type="text" id="kbTextName" placeholder="Nome da fonte (ex: faq_extra)" autocomplete="off" />
+          <button type="submit" class="kb-btn" id="kbTextBtn">Ingerir texto</button>
+        </form>
+
+        <div id="kbStatus" class="kb-status"></div>
+      </div>
+    </details>
+
+    <div id="chat" class="chat"></div>
+
+    <div class="composer">
+      <input id="input" type="text" placeholder="Digite sua mensagem..." autocomplete="off" />
+      <button id="send">Enviar</button>
+    </div>
+  </div>
+
+  <script>
+    // Empty string = same origin. The FastAPI server serves this page at "/",
+    // so all requests go to wherever the server is hosted (localhost or Railway).
+    const API_BASE = "";
+
+    // The client hardcodes the two API keys and picks one based on the tenant.
+    const API_KEYS = {
+      loja_demo: "key-loja-123",
+      clinica_demo: "key-clinica-456",
+    };
+
+    const $chat = document.getElementById("chat");
+    const $input = document.getElementById("input");
+    const $send = document.getElementById("send");
+    const $tenant = document.getElementById("tenant");
+    const $reset = document.getElementById("reset");
+    const $banner = document.getElementById("banner");
+    const $products = document.getElementById("products");
+    const $productsList = document.getElementById("productsList");
+    const $productsCount = document.getElementById("productsCount");
+    const $kbCount = document.getElementById("kbCount");
+    const $kbSources = document.getElementById("kbSources");
+    const $kbStatus = document.getElementById("kbStatus");
+    const $kbPdfForm = document.getElementById("kbPdfForm");
+    const $kbPdfFile = document.getElementById("kbPdfFile");
+    const $kbPdfName = document.getElementById("kbPdfName");
+    const $kbPdfBtn = document.getElementById("kbPdfBtn");
+    const $kbTextForm = document.getElementById("kbTextForm");
+    const $kbText = document.getElementById("kbText");
+    const $kbTextName = document.getElementById("kbTextName");
+    const $kbTextBtn = document.getElementById("kbTextBtn");
+
+    let conversationId = crypto.randomUUID();
+    let history = []; // [{ role, content }]
+
+    // ---- Tenants ---------------------------------------------------------- //
+    async function loadTenants() {
+      try {
+        const res = await fetch(`${API_BASE}/tenants`);
+        const tenants = await res.json();
+        $tenant.innerHTML = "";
+        for (const t of tenants) {
+          const opt = document.createElement("option");
+          opt.value = t.id;
+          opt.textContent = t.name;
+          $tenant.appendChild(opt);
+        }
+      } catch (e) {
+        addAssistant("⚠️ Não consegui carregar os tenants. O servidor está rodando em " + API_BASE + "?");
+      }
+    }
+
+    // ---- Rendering -------------------------------------------------------- //
+    function addRow(role) {
+      const row = document.createElement("div");
+      row.className = "row " + role;
+      const bubble = document.createElement("div");
+      bubble.className = "bubble";
+      row.appendChild(bubble);
+      $chat.appendChild(row);
+      $chat.scrollTop = $chat.scrollHeight;
+      return { row, bubble };
+    }
+
+    function addUser(text) {
+      const { bubble } = addRow("user");
+      bubble.textContent = text;
+    }
+
+    const AGENT_LABELS = {
+      faq: "📌 Agente: FAQ",
+      support: "💬 Agente: Suporte",
+      order: "🛒 Agente: Pedidos",
+      clarification: "❓ Agente: Esclarecimento",
+      fallback: "🚨 Agente: Fallback",
+    };
+
+    // ---- Products panel --------------------------------------------------- //
+    // Only the loja_demo tenant has a catalog; hide the panel otherwise.
+    async function loadProducts() {
+      const tenantId = $tenant.value;
+      if (tenantId !== "loja_demo") {
+        $products.style.display = "none";
+        return;
+      }
+      $products.style.display = "";
+      try {
+        const res = await fetch(`${API_BASE}/products/${tenantId}`);
+        if (!res.ok) throw new Error(res.status);
+        const products = await res.json();
+        $productsCount.textContent = `(${products.length})`;
+        $productsList.innerHTML = "";
+        for (const p of products) {
+          const row = document.createElement("div");
+          row.className = "product";
+
+          const name = document.createElement("span");
+          name.className = "pname";
+          name.textContent = p.name;
+
+          const price = document.createElement("span");
+          price.className = "pprice";
+          price.textContent = "R$ " + p.price.toFixed(2).replace(".", ",");
+
+          const stock = document.createElement("span");
+          const cls = p.stock === 0 ? "out" : p.stock <= 2 ? "low" : "ok";
+          stock.className = "pstock " + cls;
+          stock.textContent = p.stock === 0 ? "esgotado" : p.stock + " un";
+
+          row.append(name, price, stock);
+          $productsList.appendChild(row);
+        }
+      } catch (e) {
+        $productsList.innerHTML = "<div class='product'>⚠️ Não consegui carregar o catálogo.</div>";
+      }
+    }
+
+    // ---- Knowledge base panel --------------------------------------------- //
+    function kbStatus(msg, isErr) {
+      $kbStatus.textContent = msg || "";
+      $kbStatus.className = "kb-status" + (isErr ? " err" : "");
+    }
+
+    async function loadSources() {
+      const tenantId = $tenant.value;
+      try {
+        const res = await fetch(`${API_BASE}/v1/sources/${tenantId}`, {
+          headers: { "X-API-Key": API_KEYS[tenantId] },
+        });
+        if (!res.ok) throw new Error(res.status);
+        renderSources(await res.json());
+      } catch (e) {
+        $kbCount.textContent = "";
+        $kbSources.innerHTML = "<div class='empty'>⚠️ Não consegui carregar as fontes.</div>";
+      }
+    }
+
+    function renderSources(sources) {
+      $kbCount.textContent = `(${sources.length})`;
+      $kbSources.innerHTML = "";
+      if (!sources.length) {
+        $kbSources.innerHTML = "<div class='empty'>Nenhum documento ingerido ainda.</div>";
+        return;
+      }
+      for (const s of sources) {
+        const row = document.createElement("div");
+        row.className = "src";
+
+        const name = document.createElement("span");
+        name.className = "sname";
+        name.textContent = s.source_name;
+
+        const meta = document.createElement("span");
+        meta.className = "smeta";
+        meta.textContent = `${s.chunk_count} chunks`;
+
+        const del = document.createElement("button");
+        del.textContent = "excluir";
+        del.addEventListener("click", () => deleteSource(s.source_name));
+
+        row.append(name, meta, del);
+        $kbSources.appendChild(row);
+      }
+    }
+
+    async function deleteSource(name) {
+      const tenantId = $tenant.value;
+      try {
+        const res = await fetch(`${API_BASE}/v1/sources/${tenantId}/${encodeURIComponent(name)}`, {
+          method: "DELETE",
+          headers: { "X-API-Key": API_KEYS[tenantId] },
+        });
+        if (!res.ok) throw new Error(res.status);
+        const data = await res.json();
+        kbStatus(`🗑️ "${name}" removida (${data.deleted_chunks} chunks).`);
+        loadSources();
+      } catch (e) {
+        kbStatus("Falha ao remover a fonte.", true);
+      }
+    }
+
+    async function ingestPdf(ev) {
+      ev.preventDefault();
+      const tenantId = $tenant.value;
+      const file = $kbPdfFile.files[0];
+      const sourceName = $kbPdfName.value.trim() || (file ? file.name.replace(/\.pdf$/i, "") : "");
+      if (!file) return kbStatus("Selecione um arquivo PDF.", true);
+      if (!sourceName) return kbStatus("Informe um nome para a fonte.", true);
+
+      const form = new FormData();
+      form.append("tenant_id", tenantId);
+      form.append("source_name", sourceName);
+      form.append("file", file);
+
+      $kbPdfBtn.disabled = true;
+      kbStatus("⏳ Processando PDF (extração, chunking e embeddings)...");
+      try {
+        const res = await fetch(`${API_BASE}/v1/ingest/pdf`, {
+          method: "POST",
+          headers: { "X-API-Key": API_KEYS[tenantId] },
+          body: form,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.detail || res.status);
+        kbStatus(`✅ "${data.source_name}": ${data.chunks_created} chunks ingeridos.`);
+        $kbPdfForm.reset();
+        loadSources();
+      } catch (e) {
+        kbStatus("Falha na ingestão: " + e.message, true);
+      } finally {
+        $kbPdfBtn.disabled = false;
+      }
+    }
+
+    async function ingestText(ev) {
+      ev.preventDefault();
+      const tenantId = $tenant.value;
+      const text = $kbText.value.trim();
+      const sourceName = $kbTextName.value.trim();
+      if (!text) return kbStatus("Cole algum texto para ingerir.", true);
+      if (!sourceName) return kbStatus("Informe um nome para a fonte.", true);
+
+      $kbTextBtn.disabled = true;
+      kbStatus("⏳ Gerando embeddings...");
+      try {
+        const res = await fetch(`${API_BASE}/v1/ingest/text`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-API-Key": API_KEYS[tenantId] },
+          body: JSON.stringify({ tenant_id: tenantId, text, source_name: sourceName }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.detail || res.status);
+        kbStatus(`✅ "${data.source_name}": ${data.chunks_created} chunks ingeridos.`);
+        $kbTextForm.reset();
+        loadSources();
+      } catch (e) {
+        kbStatus("Falha na ingestão: " + e.message, true);
+      } finally {
+        $kbTextBtn.disabled = false;
+      }
+    }
+
+    function addAssistant(text, meta) {
+      const { row, bubble } = addRow("assistant");
+      bubble.textContent = text;
+      if (meta) {
+        const m = document.createElement("div");
+        m.className = "meta";
+
+        // Which agent handled the turn.
+        if (meta.agent && AGENT_LABELS[meta.agent]) {
+          const chip = document.createElement("span");
+          chip.className = "chip " + meta.agent;
+          chip.textContent = AGENT_LABELS[meta.agent];
+          m.appendChild(chip);
+        }
+
+        // Tools the OrderAgent invoked (function calling).
+        if (Array.isArray(meta.tools) && meta.tools.length) {
+          for (const t of meta.tools) {
+            const tb = document.createElement("span");
+            tb.className = "tool-badge";
+            tb.textContent = "🔧 " + t;
+            m.appendChild(tb);
+          }
+        }
+
+        // FAQ shortcut (no LLM call) — now answered straight from the RAG store.
+        if (meta.source === "faq_shortcut") {
+          const badge = document.createElement("span");
+          badge.className = "badge";
+          badge.textContent = "⚡ Resposta direta da base (sem LLM)";
+          m.appendChild(badge);
+        }
+
+        // RAG sources used to ground the answer (FAQ agent: shortcut or llm_rag).
+        if (meta.source === "faq_shortcut" || meta.source === "llm_rag") {
+          if (meta.ragChunks > 0 && Array.isArray(meta.ragSources) && meta.ragSources.length) {
+            const badge = document.createElement("span");
+            badge.className = "rag-badge";
+            badge.textContent = "📎 Fontes: " + meta.ragSources.join(", ");
+            m.appendChild(badge);
+          } else if (meta.source === "llm_rag" && meta.ragChunks === 0) {
+            const none = document.createElement("span");
+            none.className = "rag-none";
+            none.textContent = "Sem contexto RAG disponível";
+            m.appendChild(none);
+          }
+        }
+
+        // Intent + confidence.
+        if (meta.intent) {
+          const intent = document.createElement("span");
+          const conf = meta.confidence != null ? ` (${Math.round(meta.confidence * 100)}%)` : "";
+          intent.textContent = "intent: " + meta.intent + conf;
+          m.appendChild(intent);
+        }
+
+        const tok = document.createElement("span");
+        tok.textContent = (meta.tokens || 0) + " tokens";
+        m.appendChild(tok);
+        row.appendChild(m);
+      }
+      $chat.scrollTop = $chat.scrollHeight;
+    }
+
+    function showTyping() {
+      const el = document.createElement("div");
+      el.className = "typing";
+      el.id = "typing";
+      el.textContent = "digitando…";
+      $chat.appendChild(el);
+      $chat.scrollTop = $chat.scrollHeight;
+    }
+    function hideTyping() {
+      const el = document.getElementById("typing");
+      if (el) el.remove();
+    }
+
+    // ---- Send ------------------------------------------------------------- //
+    async function send() {
+      const text = $input.value.trim();
+      if (!text) return;
+
+      const tenantId = $tenant.value;
+      const apiKey = API_KEYS[tenantId];
+
+      $input.value = "";
+      $send.disabled = true;
+      $banner.classList.remove("show");
+      addUser(text);
+      showTyping();
+
+      const payload = {
+        tenant_id: tenantId,
+        conversation_id: conversationId,
+        message: text,
+        history: [...history],
+      };
+
+      try {
+        const res = await fetch(`${API_BASE}/v1/chat`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-API-Key": apiKey,
+          },
+          body: JSON.stringify(payload),
+        });
+
+        hideTyping();
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          addAssistant("⚠️ Erro " + res.status + ": " + (err.detail || res.statusText));
+          return;
+        }
+
+        const data = await res.json();
+
+        // Persist the exchange.
+        history.push({ role: "user", content: text });
+        history.push({ role: "assistant", content: data.response });
+
+        addAssistant(data.response, {
+          tokens: data.tokens_used,
+          source: data.source,
+          agent: data.agent_used,
+          intent: data.intent,
+          confidence: data.confidence,
+          tools: data.tools_called,
+          ragSources: data.rag_sources,
+          ragChunks: data.rag_chunks_used,
+        });
+
+        if (data.should_handoff) {
+          const reason = data.handoff_reason || "";
+          $banner.classList.remove("order");
+          if (reason.includes("Pedido confirmado")) {
+            // Order committed → green banner toward payment.
+            $banner.textContent = "✅ Pedido registrado — transferindo para pagamento";
+            $banner.classList.add("order");
+          } else {
+            $banner.textContent = "🔴 Transferindo para atendente humano" +
+              (reason ? " — " + reason : "");
+          }
+          $banner.classList.add("show");
+        }
+
+        // Refresh the catalog so stock changes are visible in real time.
+        loadProducts();
+      } catch (e) {
+        hideTyping();
+        addAssistant("⚠️ Falha de conexão com o servidor (" + API_BASE + ").");
+      } finally {
+        $send.disabled = false;
+        $input.focus();
+      }
+    }
+
+    // ---- New conversation ------------------------------------------------- //
+    function reset() {
+      conversationId = crypto.randomUUID();
+      history = [];
+      $chat.innerHTML = "";
+      $banner.classList.remove("show");
+      $input.focus();
+    }
+
+    // ---- Events ----------------------------------------------------------- //
+    $send.addEventListener("click", send);
+    $input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); send(); }
+    });
+    $reset.addEventListener("click", reset);
+    $tenant.addEventListener("change", () => { reset(); loadProducts(); loadSources(); });
+    $kbPdfForm.addEventListener("submit", ingestPdf);
+    $kbTextForm.addEventListener("submit", ingestText);
+
+    // Load tenants, then the catalog + knowledge base for the selected tenant.
+    loadTenants().then(() => { loadProducts(); loadSources(); });
+    $input.focus();
+  </script>
+</body>
+</html>
