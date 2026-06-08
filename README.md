@@ -46,7 +46,16 @@ Acesse http://localhost:8000 para abrir o cliente.
 |-----------------|-------------|----------------------------------------------------|
 | `GROQ_API_KEY`  | Sim         | Chave da API do Groq.                              |
 | `GROQ_MODEL`    | Não         | Modelo do Groq (padrão `llama-3.3-70b-versatile`). |
+| `DB_DIR`        | Não         | Diretório dos bancos SQLite. Aponte para o Volume do Railway (ex.: `/app/data`) para persistir os dados. |
 | `PORT`          | Não         | Definida automaticamente pelo Railway.             |
+
+### Persistência no Railway (Volume)
+
+Por padrão os bancos (`products.db`, `rag.db`) são recriados a cada deploy. Para
+persistir os dados ingeridos:
+
+1. No serviço: **Settings → Volumes → New Volume**, mount path `/app/data`.
+2. Em **Variables**, defina `DB_DIR = /app/data`.
 
 ## Deploy no Railway
 

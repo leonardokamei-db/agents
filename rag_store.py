@@ -18,6 +18,7 @@ Async callers (the FastAPI server, the FAQAgent) offload them with
 """
 
 import logging
+import os
 import re
 import sqlite3
 from pathlib import Path
@@ -39,9 +40,12 @@ TOP_K = 5                 # chunks retrieved per query (higher recall — the
                           # embedding model is weak on PT, so over-retrieve and
                           # let the LLM pick the relevant chunk from the set)
 
-# Single-file store next to this module (mirrors database.py's products.db), so the
-# location is independent of the process working directory.
-DEFAULT_DB_PATH = str(Path(__file__).parent / "rag.db")
+# Single-file store (mirrors database.py's products.db). Honors DB_DIR so it can
+# live on a Railway volume; otherwise sits next to this module, independent of the
+# process working directory.
+_DB_DIR = Path(os.getenv("DB_DIR") or Path(__file__).parent)
+_DB_DIR.mkdir(parents=True, exist_ok=True)
+DEFAULT_DB_PATH = str(_DB_DIR / "rag.db")
 
 _model: "SentenceTransformer | None" = None
 

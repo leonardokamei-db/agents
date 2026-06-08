@@ -10,12 +10,18 @@ when the table is empty.
 """
 
 import logging
+import os
 import sqlite3
 from pathlib import Path
 
 log = logging.getLogger("blip-agent.db")
 
-DB_PATH = Path(__file__).parent / "products.db"
+# Directory holding the SQLite files. On Railway, set DB_DIR to a mounted volume
+# (e.g. /app/data) so the databases survive restarts/redeploys. Falls back to the
+# module's directory for local development, preserving the previous behavior.
+DB_DIR = Path(os.getenv("DB_DIR") or Path(__file__).parent)
+DB_DIR.mkdir(parents=True, exist_ok=True)
+DB_PATH = DB_DIR / "products.db"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS products (

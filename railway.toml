@@ -8,3 +8,8 @@ healthcheckPath = "/health"
 healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3
+
+# Persistência dos bancos SQLite (products.db, rag.db):
+#   1. Crie um Volume no serviço (Settings -> Volumes) com mount path /app/data
+#   2. Defina a variável de ambiente DB_DIR = /app/data
+# Sem isso, os bancos sao recriados/repopulados a cada deploy (efemero).
