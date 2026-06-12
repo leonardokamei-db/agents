@@ -1,13 +1,13 @@
-"""FallbackAgent: handles errors, timeouts, and max-turn limits. Always hands off.
+"""FallbackAgent: erros, timeouts e limite de turnos. Sempre faz handoff.
 
-This agent is intentionally static (no LLM call) so it stays reliable even when the
-LLM is the thing that's failing.
+Estático de propósito (nenhuma chamada de LLM) — precisa funcionar justamente
+quando o LLM é o que está falhando.
 """
 
 import logging
 from typing import List
 
-from agents.base import BaseAgent
+from app.agents.base import BaseAgent
 
 log = logging.getLogger("blip-agent.fallback")
 
@@ -15,15 +15,8 @@ log = logging.getLogger("blip-agent.fallback")
 class FallbackAgent(BaseAgent):
     source = "fallback"
 
-    def fetch_context(self, user_message: str, history: List[dict]) -> dict:
-        return {"turns": len(history)}
-
-    def build_prompt(self, context, user_message, history):
-        # Never calls the LLM.
-        return []
-
     async def execute(self, user_message: str, history: List[dict]) -> dict:
-        log.info("FallbackAgent invoked (history_len=%d) — handing off.", len(history))
+        log.info("FallbackAgent (history=%d) — handoff.", len(history))
         return {
             "response": (
                 "Para te atender melhor, vou transferir você para um de nossos "
