@@ -1,8 +1,9 @@
-"""CRUD de agentes (tenants) na tabela `agents` do core.db.
+"""CRUD de agentes (tenants) — regra de negócio sobre o AgentRepository.
 
 Criar um agente aqui é o que "cria o endpoint": as rotas usam o id como path
 param (/v1/agents/{agent_id}/...), então um agente novo passa a aceitar
-requisições imediatamente, sem redeploy.
+requisições imediatamente, sem redeploy. O SQL vive no repositório; aqui mora a
+geração de id/api_key e as validações.
 """
 
 import logging
@@ -10,14 +11,13 @@ import re
 import secrets
 import unicodedata
 
-from app.db import connect, row_to_dict
+from app.domain import AgentConfig
+from app.errors import ConflictError
+from app.repositories import AgentRepository
 
 log = logging.getLogger("blip-agent.tenants")
 
-_AGENT_FIELDS = (
-    "name", "system_prompt", "business_rules", "max_turns",
-    "product_mode", "product_api_url", "product_api_key",
-)
+_repo = AgentRepository()
 
 
 def slugify(name: str) -> str:
@@ -26,73 +26,30 @@ def slugify(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", ascii_only).strip("-") or "agente"
 
 
-def create_agent(data: dict) -> dict:
+def create_agent(data: dict) -> AgentConfig:
     """Insere um agente novo e gera sua api_key. Retorna o registro completo."""
     agent_id = data.get("id") or slugify(data["name"])
+    if _repo.exists(agent_id):
+        raise ConflictError(f"Já existe um agente com id '{agent_id}'.")
     api_key = f"blip-{secrets.token_urlsafe(24)}"
-
-    conn = connect()
-    try:
-        if conn.execute("SELECT 1 FROM agents WHERE id = ?", (agent_id,)).fetchone():
-            raise ValueError(f"Já existe um agente com id '{agent_id}'.")
-        conn.execute(
-            "INSERT INTO agents (id, name, api_key, system_prompt, business_rules, "
-            "max_turns, product_mode, product_api_url, product_api_key) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                agent_id, data["name"], api_key,
-                data.get("system_prompt", ""), data.get("business_rules", ""),
-                data.get("max_turns", 15), data.get("product_mode", "none"),
-                data.get("product_api_url", ""), data.get("product_api_key", ""),
-            ),
-        )
-        conn.commit()
-    finally:
-        conn.close()
+    _repo.insert(agent_id, api_key, data)
     log.info("Agente criado: %s", agent_id)
-    return get_agent(agent_id)
+    return _repo.get(agent_id)
 
 
-def get_agent(agent_id: str) -> dict | None:
-    conn = connect()
-    try:
-        row = conn.execute("SELECT * FROM agents WHERE id = ?", (agent_id,)).fetchone()
-        return row_to_dict(row) if row else None
-    finally:
-        conn.close()
+def get_agent(agent_id: str) -> AgentConfig | None:
+    return _repo.get(agent_id)
 
 
-def list_agents() -> list[dict]:
-    conn = connect()
-    try:
-        rows = conn.execute("SELECT * FROM agents ORDER BY created_at").fetchall()
-        return [row_to_dict(r) for r in rows]
-    finally:
-        conn.close()
+def list_agents() -> list[AgentConfig]:
+    return _repo.list()
 
 
-def update_agent(agent_id: str, changes: dict) -> dict | None:
+def update_agent(agent_id: str, changes: dict) -> AgentConfig | None:
     """Atualiza apenas os campos editáveis presentes em `changes`."""
-    fields = {k: v for k, v in changes.items() if k in _AGENT_FIELDS and v is not None}
-    if fields:
-        sets = ", ".join(f"{k} = ?" for k in fields)
-        conn = connect()
-        try:
-            conn.execute(
-                f"UPDATE agents SET {sets} WHERE id = ?",
-                (*fields.values(), agent_id),
-            )
-            conn.commit()
-        finally:
-            conn.close()
-    return get_agent(agent_id)
+    _repo.update(agent_id, changes)
+    return _repo.get(agent_id)
 
 
 def delete_agent(agent_id: str) -> bool:
-    conn = connect()
-    try:
-        cur = conn.execute("DELETE FROM agents WHERE id = ?", (agent_id,))
-        conn.commit()
-        return cur.rowcount > 0
-    finally:
-        conn.close()
+    return _repo.delete(agent_id)

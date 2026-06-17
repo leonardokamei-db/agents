@@ -22,6 +22,7 @@ import sqlite_vec
 
 from app import config
 from app.embeddings import EmbeddingError, embed_documents, embed_query
+from app.errors import ValidationError
 
 log = logging.getLogger("blip-agent.rag")
 
@@ -170,7 +171,7 @@ def ingest_pdf(agent_id: str, pdf_path: str, source_name: str) -> dict:
     reader = PdfReader(pdf_path)
     full_text = _strip_repeated_page_lines([p.extract_text() or "" for p in reader.pages])
     if not full_text:
-        raise ValueError(f"Não foi possível extrair texto de {pdf_path}.")
+        raise ValidationError(f"Não foi possível extrair texto de {pdf_path}.")
     return ingest_text(agent_id, full_text, source_name)
 
 
@@ -178,7 +179,7 @@ def ingest_text(agent_id: str, text: str, source_name: str) -> dict:
     """Chunka -> substitui chunks antigos do source -> embeda -> grava."""
     chunks = split_text_into_chunks(text)
     if not chunks:
-        raise ValueError("O texto fornecido é curto demais para gerar chunks.")
+        raise ValidationError("O texto fornecido é curto demais para gerar chunks.")
 
     embeddings = embed_documents(chunks)
     conn = _connect()

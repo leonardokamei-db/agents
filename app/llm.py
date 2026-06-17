@@ -10,8 +10,10 @@ from typing import List, Tuple
 
 import groq
 from groq import Groq
+from groq.types.chat import ChatCompletion
 
 from app import config
+from app.domain import ChatMessage
 
 log = logging.getLogger("blip-agent.llm")
 
@@ -27,11 +29,11 @@ class LLMClient:
         self.model = config.GROQ_MODEL
         self.client = Groq(api_key=config.GROQ_API_KEY)
 
-    async def complete(self, messages: List[dict]) -> Tuple[str, int]:
+    async def complete(self, messages: List[ChatMessage]) -> Tuple[str, int]:
         """Chat completion sem ferramentas. Retorna (texto, tokens)."""
         return await asyncio.to_thread(self.complete_sync, messages)
 
-    def complete_sync(self, messages: List[dict]) -> Tuple[str, int]:
+    def complete_sync(self, messages: List[ChatMessage]) -> Tuple[str, int]:
         try:
             resp = self.client.chat.completions.create(
                 model=self.model,
@@ -49,7 +51,7 @@ class LLMClient:
         text = resp.choices[0].message.content or ""
         return text, _tokens(resp)
 
-    def complete_with_tools(self, messages: list, tools: list):
+    def complete_with_tools(self, messages: list, tools: list) -> ChatCompletion:
         """Chamada com tool definitions. Retorna o objeto bruto da completion
         para o chamador inspecionar `tool_calls`. Síncrona — o OrderAgent roda
         o loop inteiro dentro de `asyncio.to_thread`."""

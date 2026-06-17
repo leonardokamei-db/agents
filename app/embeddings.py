@@ -16,6 +16,7 @@ import numpy as np
 import requests
 
 from app import config
+from app.errors import EmbeddingUnavailableError
 
 log = logging.getLogger("blip-agent.embeddings")
 
@@ -23,10 +24,10 @@ JINA_API_URL = "https://api.jina.ai/v1/embeddings"
 _TIMEOUT = 30  # segundos
 
 
-class EmbeddingError(RuntimeError):
-    """API da Jina inacessível ou com erro. Os chamadores degradam: a ingestão
-    falha com mensagem clara e a busca retorna [] (o agente responde só com o
-    prompt base em vez de derrubar a requisição)."""
+class EmbeddingError(EmbeddingUnavailableError):
+    """API da Jina inacessível ou com erro (AppError 503). Os chamadores degradam:
+    a busca RAG captura e retorna [] (o agente responde pelo prompt base); a
+    ingestão deixa propagar para o handler (503 com mensagem clara)."""
 
 
 def embed_documents(texts: list[str]) -> np.ndarray:

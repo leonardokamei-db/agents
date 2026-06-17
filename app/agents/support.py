@@ -4,6 +4,8 @@ import logging
 from typing import List
 
 from app.agents.base import BaseAgent
+from app.domain import AgentResult, ChatMessage
+from app.messages import ESCALATION_SUPPORT
 from app.prompts import support_prompt
 from app.textutil import word_set
 
@@ -15,12 +17,6 @@ ESCALATION_KEYWORDS = {
     "procon", "absurdo", "inaceitavel", "processo",
 }
 
-ESCALATION_MESSAGE = (
-    "Entendo que isso é importante e quero garantir que seja resolvido da melhor "
-    "forma. Vou transferir você para um atendente humano que poderá cuidar disso "
-    "agora mesmo."
-)
-
 
 class SupportAgent(BaseAgent):
     source = "llm"
@@ -28,14 +24,13 @@ class SupportAgent(BaseAgent):
     def system_prompt(self, user_message: str) -> str:
         return support_prompt(self.agent)
 
-    async def execute(self, user_message: str, history: List[dict]) -> dict:
+    async def execute(self, user_message: str, history: List[ChatMessage]) -> AgentResult:
         if word_set(user_message) & ESCALATION_KEYWORDS:
             log.info("Escalonamento determinístico de suporte (0 tokens).")
-            return {
-                "response": ESCALATION_MESSAGE,
-                "should_handoff": True,
-                "handoff_reason": "Problema de suporte sinalizado para escalonamento.",
-                "source": "support_escalation",
-                "tokens_used": 0,
-            }
+            return AgentResult(
+                response=ESCALATION_SUPPORT,
+                should_handoff=True,
+                handoff_reason="Problema de suporte sinalizado para escalonamento.",
+                source="support_escalation",
+            )
         return await super().execute(user_message, history)

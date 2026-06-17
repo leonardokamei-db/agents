@@ -19,7 +19,9 @@ import logging
 from typing import List
 
 from app.agents.base import BaseAgent, build_messages
+from app.domain import AgentResult, ChatMessage
 from app.llm import ToolUseFailedError, _tokens
+from app.messages import DEGRADED_CATALOG, ORDER_CONFIRMED
 from app.prompts import order_prompt
 from app.tools import PRODUCT_TOOLS, execute_tool
 
@@ -28,12 +30,6 @@ log = logging.getLogger("blip-agent.order")
 MAX_TOOL_ITERATIONS = 5  # teto de rodadas de tools por mensagem
 TOOL_CALL_RETRIES = 2    # retries de uma chamada após tool call malformada
 
-DEGRADED_MESSAGE = (
-    "Desculpe, tive um problema ao consultar o catálogo. Você pode reformular "
-    "informando o nome do produto e a quantidade? Se preferir, posso transferir "
-    "você para um atendente."
-)
-
 
 class OrderAgent(BaseAgent):
     source = "llm"
@@ -41,10 +37,10 @@ class OrderAgent(BaseAgent):
     def system_prompt(self, user_message: str) -> str:
         return order_prompt(self.agent)
 
-    async def execute(self, user_message: str, history: List[dict]) -> dict:
+    async def execute(self, user_message: str, history: List[ChatMessage]) -> AgentResult:
         return await asyncio.to_thread(self._run_tool_loop, user_message, history)
 
-    def _run_tool_loop(self, user_message: str, history: List[dict]) -> dict:
+    def _run_tool_loop(self, user_message: str, history: List[ChatMessage]) -> AgentResult:
         """Loop de tool use bloqueante (roda em worker thread)."""
         messages = build_messages(self.system_prompt(user_message), user_message, history)
         tools_called: list[str] = []
@@ -54,7 +50,7 @@ class OrderAgent(BaseAgent):
             response = self._call(messages)
         except ToolUseFailedError:
             log.warning("Tool call malformada já na 1ª rodada; degradando.")
-            return self._result(DEGRADED_MESSAGE, tools_called)
+            return self._result(DEGRADED_CATALOG, tools_called)
 
         iterations = 0
         while (response.choices[0].finish_reason == "tool_calls"
@@ -96,7 +92,7 @@ class OrderAgent(BaseAgent):
                 log.info("Retry %d/%d após tool_use_failed.", attempt + 1, TOOL_CALL_RETRIES)
         raise last_exc
 
-    def _finalize_in_text(self, messages: List[dict]) -> str:
+    def _finalize_in_text(self, messages: List[ChatMessage]) -> str:
         """Pede uma resposta em texto puro com os dados de tools já coletados."""
         messages = messages + [{
             "role": "system",
@@ -106,24 +102,22 @@ class OrderAgent(BaseAgent):
         try:
             text, tokens = self.llm.complete_sync(messages)
             self._tokens_used += tokens
-            return text or DEGRADED_MESSAGE
+            return text or DEGRADED_CATALOG
         except Exception as e:  # noqa: BLE001 — último recurso.
             log.warning("Finalização em texto falhou: %s", e)
-            return DEGRADED_MESSAGE
+            return DEGRADED_CATALOG
 
-    def _result(self, text: str, tools_called: List[str]) -> dict:
+    def _result(self, text: str, tools_called: List[str]) -> AgentResult:
         # reserve_stock == compra registrada -> humano confirma o pagamento.
         reserved = "reserve_stock" in tools_called
         text = (text or "").strip()
         if not text:
-            text = ("Seu pedido foi registrado. Vou transferir você para finalizar o pagamento."
-                    if reserved else DEGRADED_MESSAGE)
-        return {
-            "response": text,
-            "should_handoff": reserved,
-            "handoff_reason": ("Pedido confirmado — encaminhar para pagamento"
-                               if reserved else None),
-            "source": self.source,
-            "tokens_used": self._tokens_used,
-            "tools_called": tools_called,
-        }
+            text = ORDER_CONFIRMED if reserved else DEGRADED_CATALOG
+        return AgentResult(
+            response=text,
+            should_handoff=reserved,
+            handoff_reason=("Pedido confirmado — encaminhar para pagamento" if reserved else None),
+            source=self.source,
+            tokens_used=self._tokens_used,
+            tools_called=tools_called,
+        )

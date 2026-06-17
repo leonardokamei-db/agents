@@ -1,10 +1,13 @@
-"""Banco SQLite central (core.db): tabelas `agents` e `products`.
+"""Infraestrutura do banco SQLite central (core.db).
 
-Somente stdlib `sqlite3` — sem ORM. As funções de acesso ficam em
-app.tenants (agents) e app.catalog (products); aqui mora só a infraestrutura.
+Aqui mora só a infra: schema, conexão e o helper de transação. O acesso a dados
+tipado vive em app/repositories/ (AgentRepository, ProductRepository) — nenhum
+SQL cru deve existir fora daquela camada.
 """
 
 import sqlite3
+from contextlib import contextmanager
+from typing import Iterator
 
 from app.config import CORE_DB_PATH
 
@@ -38,18 +41,36 @@ def connect() -> sqlite3.Connection:
     conn = sqlite3.connect(CORE_DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA journal_mode = WAL")  # melhor concorrência de leitura/escrita
     return conn
 
 
-def init_db() -> None:
-    """Cria o schema se não existir (idempotente)."""
+@contextmanager
+def transaction() -> Iterator[sqlite3.Connection]:
+    """Conexão com commit/rollback automáticos — elimina o connect()/try/finally
+    repetido. Faz rollback em qualquer exceção e sempre fecha a conexão."""
     conn = connect()
     try:
-        conn.executescript(SCHEMA)
+        yield conn
         conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
 
 
-def row_to_dict(row: sqlite3.Row) -> dict:
-    return {k: row[k] for k in row.keys()}
+@contextmanager
+def read_connection() -> Iterator[sqlite3.Connection]:
+    """Conexão somente-leitura (sem commit). Apenas garante o fechamento."""
+    conn = connect()
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+def init_db() -> None:
+    """Cria o schema se não existir (idempotente)."""
+    with transaction() as conn:
+        conn.executescript(SCHEMA)

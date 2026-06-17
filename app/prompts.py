@@ -5,24 +5,26 @@ regras de negócio do cliente entram uma única vez. Menos texto fixo == menos
 tokens de entrada em TODA chamada ao Groq.
 """
 
+from app.domain import AgentConfig
+
 HANDOFF_TOKEN = "[HANDOFF]"
 
 
-def base_prompt(agent: dict) -> str:
+def base_prompt(agent: AgentConfig) -> str:
     """Prompt base do agente. Usa o custom do cliente se definido; senão, um
     padrão mínimo. Regras de negócio são anexadas em uma linha."""
-    prompt = (agent.get("system_prompt") or "").strip() or (
-        f"Você é o assistente virtual de {agent['name']}. Responda em português, "
+    prompt = (agent.system_prompt or "").strip() or (
+        f"Você é o assistente virtual de {agent.name}. Responda em português, "
         f"de forma breve e cordial. Se não souber responder com as informações "
         f"disponíveis, comece a resposta com {HANDOFF_TOKEN}."
     )
-    rules = (agent.get("business_rules") or "").strip()
+    rules = (agent.business_rules or "").strip()
     if rules:
         prompt += f"\nRegras de negócio: {rules}"
     return prompt
 
 
-def faq_prompt(agent: dict, chunks: list[dict]) -> str:
+def faq_prompt(agent: AgentConfig, chunks: list[dict]) -> str:
     """Prompt RAG: trechos recuperados + instrução de aterramento."""
     if chunks:
         context = "\n\n".join(
@@ -38,7 +40,7 @@ def faq_prompt(agent: dict, chunks: list[dict]) -> str:
     )
 
 
-def support_prompt(agent: dict) -> str:
+def support_prompt(agent: AgentConfig) -> str:
     return (
         f"{base_prompt(agent)}\n"
         f"Modo suporte: reconheça o problema com empatia e resolva. Se exigir um "
@@ -46,7 +48,7 @@ def support_prompt(agent: dict) -> str:
     )
 
 
-def clarification_prompt(agent: dict) -> str:
+def clarification_prompt(agent: AgentConfig) -> str:
     return (
         f"{base_prompt(agent)}\n"
         f"A intenção do cliente está ambígua. Não responda ainda: faça UMA única "
@@ -54,7 +56,7 @@ def clarification_prompt(agent: dict) -> str:
     )
 
 
-def order_prompt(agent: dict) -> str:
+def order_prompt(agent: AgentConfig) -> str:
     return (
         f"{base_prompt(agent)}\n"
         f"Modo pedidos: consulte catálogo, estoque e preços SEMPRE pelas ferramentas — "

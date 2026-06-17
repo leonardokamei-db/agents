@@ -4,12 +4,13 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from app import config, tenants
 from app.db import init_db
+from app.errors import AppError
 from app.rag import init_rag_db
 from app.routers import admin, agent, knowledge, products
 
@@ -47,7 +48,7 @@ def _seed_demo_agent() -> None:
         catalog.create_product("demo", {
             "name": name, "description": description, "price": price, "stock": stock,
         })
-    log.info("Agente demo criado (id=demo). api_key=%s", demo["api_key"])
+    log.info("Agente demo criado (id=demo). api_key=%s", demo.api_key)
 
 
 @asynccontextmanager
@@ -73,12 +74,25 @@ app.include_router(knowledge.router)
 app.include_router(products.router)
 
 
+@app.exception_handler(AppError)
+async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
+    """Camada única de erros: serializa qualquer AppError com seu status tipado."""
+    return JSONResponse(status_code=exc.status_code, content={"code": exc.code, "detail": exc.detail})
+
+
+@app.exception_handler(Exception)
+async def unhandled_error_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Rede de segurança: erros não previstos viram 500 padronizado (com log)."""
+    log.exception("Erro não tratado em %s: %s", request.url.path, exc)
+    return JSONResponse(status_code=500, content={"code": "internal_error", "detail": "Erro interno."})
+
+
 @app.get("/health")
 def health():
     return {
         "status": "ok",
         "model": config.GROQ_MODEL,
-        "agents": [a["id"] for a in tenants.list_agents()],
+        "agents": [a.id for a in tenants.list_agents()],
     }
 
 

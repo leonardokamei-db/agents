@@ -1,38 +1,45 @@
 """BaseAgent: contrato + fluxo padrão de execução com LLM."""
 
-from typing import List, Optional, Tuple
+from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING, List, Optional, Tuple
 
+from app.domain import AgentConfig, AgentResult, ChatMessage
 from app.prompts import HANDOFF_TOKEN
 
+if TYPE_CHECKING:  # evita ciclo de import em runtime; tipa self.llm
+    from app.llm import LLMClient
 
-class BaseAgent:
+
+class BaseAgent(ABC):
     # Proveniência padrão reportada na resposta. Subclasses podem sobrescrever.
     source = "llm"
 
-    def __init__(self, agent_config: dict, llm):
+    def __init__(self, agent_config: AgentConfig, llm: "LLMClient"):
         self.agent = agent_config
         self.llm = llm
 
+    @abstractmethod
     def system_prompt(self, user_message: str) -> str:
         """System prompt do agente para esta mensagem."""
         raise NotImplementedError
 
-    async def execute(self, user_message: str, history: List[dict]) -> dict:
+    async def execute(self, user_message: str, history: List[ChatMessage]) -> AgentResult:
         """Fluxo padrão: prompt -> LLM -> parse de handoff."""
         messages = build_messages(self.system_prompt(user_message), user_message, history)
         text, tokens = await self.llm.complete(messages)
         should_handoff, clean, reason = parse_handoff(text)
-        return {
-            "response": clean,
-            "should_handoff": should_handoff,
-            "handoff_reason": reason,
-            "source": self.source,
-            "tokens_used": tokens,
-        }
+        return AgentResult(
+            response=clean,
+            should_handoff=should_handoff,
+            handoff_reason=reason,
+            source=self.source,
+            tokens_used=tokens,
+        )
 
 
-def build_messages(system_prompt: str, user_message: str, history: List[dict]) -> List[dict]:
-    messages = [{"role": "system", "content": system_prompt}]
+def build_messages(system_prompt: str, user_message: str,
+                   history: List[ChatMessage]) -> List[ChatMessage]:
+    messages: List[ChatMessage] = [{"role": "system", "content": system_prompt}]
     messages.extend({"role": m["role"], "content": m["content"]} for m in history)
     messages.append({"role": "user", "content": user_message})
     return messages
