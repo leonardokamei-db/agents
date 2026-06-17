@@ -1,15 +1,19 @@
 # Arquitetura — blip-agent
 
-Plataforma multi-tenant de agentes de atendimento. Cada cliente (tenant) é um
-**agente** com endpoint de chat próprio, base de conhecimento (RAG) própria,
-regras de negócio editáveis e catálogo de produtos opcional. A proposta é
-funcionar como um "mini Blip Studio": o cliente configura o agente pela
-interface/API e o consome via um endpoint REST, sem precisar de um time interno
-dedicado a cada bot.
+Plataforma multi-tenant de agentes de atendimento. Um **tenant** (cliente) é dono
+de **N agentes**; cada agente tem endpoint de chat próprio, base de conhecimento
+(RAG) própria, regras de negócio editáveis e catálogo de produtos opcional. A
+proposta é funcionar como um "mini Blip Studio": o cliente configura agentes pela
+interface/API e os consome via endpoints REST, sem um time interno dedicado a
+cada bot.
 
-- **Stack:** FastAPI (Python) · Groq (LLM) · Jina (embeddings) · SQLite + sqlite-vec (dados e vetores)
-- **Deploy:** Railway (`uvicorn server:app`), bancos SQLite em volume persistente
+Usuários se vinculam a um tenant por uma **membership** com papel (`owner`/
+`member`) — RBAC mínimo. A credencial de consumo vive no nível do **tenant**.
+
+- **Stack:** FastAPI (Python) · Groq (LLM) · Jina (embeddings) · SQLite + sqlite-vec (dados e vetores) · Celery+Redis opcional (fila de ingestão)
+- **Deploy:** Railway (`uvicorn app.main:app`), bancos SQLite em volume persistente
 - **Front-end:** `client.html` — painel estático servido pela própria API em `/`
+- **Camadas:** routers (HTTP) → services (regra de negócio) → repositories (SQL) → domínio tipado
 
 ---
 
@@ -24,10 +28,11 @@ dedicado a cada bot.
                           ┌──────────────▼──────────────┐
                           │           FastAPI            │  app/main.py
                           │  ┌────────────────────────┐  │
-                          │  │ routers/               │  │
-                          │  │  admin · agent · chat  │  │  autenticação por
-                          │  │  knowledge · products  │  │  agente / admin
+                          │  │ routers/               │  │  RBAC: admin /
+                          │  │  tenants · agent · chat│  │  owner / member
+                          │  │  knowledge · products  │  │  (deps.py)
                           │  └───────────┬────────────┘  │
+                          │     services/ → repositories/ │  regra de negócio → SQL
                           │              ▼               │
                           │       Orchestrator           │  classifica intenção
                           │   (roteia p/ um agente)      │  e seleciona o agente
@@ -54,39 +59,54 @@ Mapa de arquivos:
 
 | Camada | Arquivo | Responsabilidade |
 |---|---|---|
-| Config | `app/config.py` | Env vars e constantes (HISTORY_LIMIT, RAG_TOP_K, modelos, paths) |
-| API | `app/main.py`, `app/routers/*` | Endpoints, autenticação, CORS, ciclo de vida |
-| Schemas | `app/schemas.py` | Modelos Pydantic (validação de entrada/saída) |
-| Tenants | `app/tenants.py`, `app/db.py` | CRUD de agentes na tabela `agents` (SQLite) |
+| Config | `app/config.py` | Env vars e constantes (HISTORY_LIMIT, RAG_TOP_K, modelos, paths, LOG_LEVEL, REDIS_URL) |
+| API | `app/main.py`, `app/routers/*` | Endpoints, autenticação/RBAC, CORS, middleware de contexto, ciclo de vida |
+| Domínio | `app/domain.py` | Tipos tipados (Tenant, User, Membership, Principal, AgentConfig, ProductRow, AgentResult) |
+| Schemas | `app/schemas/*` | Modelos Pydantic por domínio (agent/chat/product/knowledge/tenant) |
+| Services | `app/services/*` | Regra de negócio (Agent/Tenant/Product/Knowledge), injetada via `Depends` |
+| Dados | `app/repositories/*`, `app/db.py` | Todo o SQL + schema + migração multi-tenant |
 | Roteamento | `app/orchestrator.py`, `app/classifier.py` | Classifica intenção e escolhe o agente |
 | Agentes | `app/agents/*` | Lógica de cada modo (FAQ/RAG, suporte, pedidos, ...) |
 | Prompts | `app/prompts.py` | System prompts compactos por modo |
 | RAG | `app/rag.py`, `app/embeddings.py` | Chunking, ingestão, busca vetorial, embeddings |
 | Catálogo | `app/catalog.py`, `app/tools.py` | Produtos (SQLite interno OU API externa) + tool use |
+| Workers | `app/tasks.py` | Ingestão via Celery+Redis (202) com fallback síncrono |
+| Observabilidade | `app/logging_ctx.py` | Correlação de log por `request_id` + `tenant` |
 
 ---
 
 ## 2. Multi-tenancy: como nasce um endpoint
 
-Um agente é uma linha na tabela `agents`. **Criar o agente já "abre" o
-endpoint** — não há geração de código nem redeploy. As rotas usam o `agent_id`
-como path param e o resolvem contra o banco a cada requisição:
+Um agente é uma linha na tabela `agents`, **sempre dentro de um tenant**. Criar o
+tenant gera sua `api_key` master e o primeiro usuário `owner`; criar o agente já
+**"abre" o endpoint** — sem geração de código nem redeploy. As rotas resolvem o
+agente pelo par `(tenant_id, slug)` a cada requisição:
 
 ```
-POST   /v1/agents                          (admin) cria o agente → devolve api_key + endpoint
-POST   /v1/agents/{id}/chat                conversa (a "porta" do agente)
-GET/PUT /v1/agents/{id}/config             lê/edita prompt e regras de negócio
-POST   /v1/agents/{id}/knowledge/pdf|text  sobe FAQ/documentos (RAG)
-GET    /v1/agents/{id}/knowledge/sources   lista fontes indexadas
-*      /v1/agents/{id}/products            CRUD do catálogo (modo interno)
+POST   /v1/tenants                                   (admin) cria tenant → api_key do tenant + owner
+GET    /v1/tenants                                   (admin) lista tenants (sem segredos)
+DELETE /v1/tenants/{tid}                             (admin) exclui tenant (cascade + RAG)
+GET    /v1/tenants/{tid}/members                     (owner) lista membros
+POST   /v1/tenants/{tid}/members                     (owner) convida usuário (gera api_key)
+POST   /v1/tenants/{tid}/agents                      (owner) cria agente → endpoint
+GET    /v1/tenants/{tid}/agents                      (member) lista agentes do tenant
+GET/PUT /v1/tenants/{tid}/agents/{slug}[/config]     (member ler / owner editar)
+POST   /v1/tenants/{tid}/agents/{slug}/chat          (member) conversa (a "porta" do agente)
+POST   /v1/tenants/{tid}/agents/{slug}/knowledge/... (member) sobe/gere FAQ (RAG); 202 se enfileirado
+*      /v1/tenants/{tid}/agents/{slug}/products      (member) CRUD do catálogo (modo interno)
 ```
 
-**Autenticação em duas camadas** (`app/routers/deps.py`):
-- `X-Admin-Key` — operações de plataforma (criar/listar/excluir agentes).
-- `X-API-Key` — chave única por agente, gerada na criação, escopo só àquele agente.
+**Autenticação + RBAC** (`app/routers/deps.py`, ponto 8):
+- `X-Admin-Key` = `ADMIN_API_KEY` — admin de **plataforma** (cria/exclui tenants; superusuário).
+- `X-API-Key` = api_key do **tenant** — owner do próprio tenant (chave master/consumo).
+- `X-API-Key` = api_key de **usuário** — papel da membership (`owner` | `member`).
 
-O isolamento de dados é por `agent_id` em todas as tabelas (produtos e chunks
-RAG filtram por tenant), então um agente nunca enxerga dados de outro.
+`member` tem leitura + chat + conteúdo; `owner`/`admin` gerenciam agentes e membros.
+
+Cada agente tem `id` **globalmente único** (`{tenant}__{slug}`, resolvendo colisão
+de slug entre tenants). O isolamento de dados é por `agent_id` (produtos e chunks
+RAG filtram por agente) e por `tenant_id` (agentes/membros), então nenhum tenant
+enxerga dados de outro — validado por smoke (chave de um tenant em agente de outro → 403).
 
 ---
 
@@ -159,17 +179,25 @@ a fonte configurada. O modelo nunca inventa preço ou estoque.
 `core.db` (relacional):
 
 ```
-agents(id PK, name, api_key UNIQUE, system_prompt, business_rules,
-       max_turns, product_mode, product_api_url, product_api_key, created_at)
+tenants(id PK, name, api_key UNIQUE, created_at)
+users(id PK, email UNIQUE, name, api_key UNIQUE, created_at)
+memberships(tenant_id FK→tenants, user_id FK→users, role)   -- PK (tenant_id, user_id)
+agents(id PK = {tenant}__{slug}, tenant_id FK→tenants, slug, name, system_prompt,
+       business_rules, max_turns, product_mode, product_api_url, product_api_key,
+       rag_enabled, external_products, created_at)           -- UNIQUE (tenant_id, slug)
 products(id PK, agent_id FK→agents, name, description, price, stock, unit)
 ```
 
 `rag.db` (vetorial, sqlite-vec):
 
 ```
-chunks(id PK, tenant_id, source_name, chunk_index, content, created_at)
+chunks(id PK, agent_id, source_name, chunk_index, content, created_at)
 chunk_embeddings(chunk_id PK, embedding FLOAT[384])   -- tabela virtual vec0
 ```
+
+> A credencial subiu para o tenant: `agents` **não tem mais `api_key`**. Bancos
+> legados são migrados no boot (rebuild de `agents` para o tenant `default`;
+> `chunks.tenant_id`→`agent_id`) — ver `app/db.py` e `docs/DEBUG.md`.
 
 ---
 

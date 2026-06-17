@@ -28,4 +28,3 @@ class ChatResponse(BaseModel):
     tools_called: List[str] = []
     rag_chunks_used: int = 0
     rag_sources: List[str] = []
-    error: Optional[str] = None

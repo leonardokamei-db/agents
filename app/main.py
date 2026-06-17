@@ -1,6 +1,7 @@
 """Aplicação FastAPI: monta routers, inicializa bancos e serve o client."""
 
 import logging
+import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -8,13 +9,20 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
-from app import config, tenants
+from app import config
 from app.db import init_db
 from app.errors import AppError
+from app.logging_ctx import (
+    configure_logging,
+    request_id_var,
+    tenant_from_path,
+    tenant_id_var,
+)
 from app.rag import init_rag_db
-from app.routers import admin, agent, knowledge, products
+from app.routers import agent, knowledge, products, tenants
+from app.services import get_tenant_service
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(levelname)s  %(message)s")
+configure_logging(config.LOG_LEVEL)
 log = logging.getLogger("blip-agent")
 
 _CLIENT_HTML = Path(__file__).resolve().parent.parent / "client.html"
@@ -28,15 +36,20 @@ _DEMO_PRODUCTS = [
 ]
 
 
-def _seed_demo_agent() -> None:
-    """Cria um agente demo no primeiro boot com banco vazio (desligue com
-    SEED_DEMO=0). Sem conteúdo RAG — suba um PDF pela UI ou API."""
-    if not config.SEED_DEMO or tenants.list_agents():
-        return
-    from app import catalog
+def _bootstrap() -> None:
+    """Garante o tenant `default` e, em banco vazio, semeia o agente demo
+    (desligue com SEED_DEMO=0). Sem conteúdo RAG — suba um PDF pela UI/API."""
+    get_tenant_service().ensure_default_tenant()
 
-    demo = tenants.create_agent({
-        "id": "demo",
+    from app.repositories import AgentRepository
+    if not config.SEED_DEMO or AgentRepository().list_for_tenant(config.DEFAULT_TENANT_ID):
+        return
+
+    from app import catalog
+    from app.services import get_agent_service
+
+    demo = get_agent_service().create(config.DEFAULT_TENANT_ID, {
+        "slug": "demo",
         "name": "Loja Demo",
         "business_rules": (
             "Troca em até 7 dias com nota fiscal. Reembolso se a entrega atrasar "
@@ -45,21 +58,22 @@ def _seed_demo_agent() -> None:
         "product_mode": "internal",
     })
     for name, description, price, stock in _DEMO_PRODUCTS:
-        catalog.create_product("demo", {
+        catalog.create_product(demo.id, {
             "name": name, "description": description, "price": price, "stock": stock,
         })
-    log.info("Agente demo criado (id=demo). api_key=%s", demo.api_key)
+    log.info("Agente demo criado: tenant=%s slug=%s id=%s",
+             demo.tenant_id, demo.slug, demo.id)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
     init_rag_db()
-    _seed_demo_agent()
+    _bootstrap()
     yield
 
 
-app = FastAPI(title="Blip Multi-Tenant Agent", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="Blip Multi-Tenant Agent", version="2.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -68,7 +82,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(admin.router)
+
+@app.middleware("http")
+async def context_middleware(request: Request, call_next):
+    """Correlação de log (ponto 9): fixa request_id + tenant nos contextvars e
+    devolve o request_id no header da resposta."""
+    rid = request.headers.get("X-Request-ID") or uuid.uuid4().hex[:12]
+    r_tok = request_id_var.set(rid)
+    t_tok = tenant_id_var.set(tenant_from_path(request.url.path))
+    try:
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = rid
+        return response
+    finally:
+        request_id_var.reset(r_tok)
+        tenant_id_var.reset(t_tok)
+
+
+app.include_router(tenants.router)
 app.include_router(agent.router)
 app.include_router(knowledge.router)
 app.include_router(products.router)
@@ -89,10 +120,12 @@ async def unhandled_error_handler(request: Request, exc: Exception) -> JSONRespo
 
 @app.get("/health")
 def health():
+    from app.repositories import TenantRepository
     return {
         "status": "ok",
         "model": config.GROQ_MODEL,
-        "agents": [a.id for a in tenants.list_agents()],
+        "celery": config.CELERY_ENABLED,
+        "tenants": [t.id for t in TenantRepository().list()],
     }
 
 

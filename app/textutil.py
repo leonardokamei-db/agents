@@ -13,3 +13,8 @@ def normalize(text: str) -> str:
 def word_set(text: str) -> set[str]:
     """Conjunto de palavras normalizadas (>= 2 chars) do texto."""
     return {w for w in re.findall(r"[a-z0-9]+", normalize(text)) if len(w) >= 2}
+
+
+def slugify(name: str, fallback: str = "item") -> str:
+    """Slug ASCII estável a partir de um nome (usado em ids de tenant/agente)."""
+    return re.sub(r"[^a-z0-9]+", "-", normalize(name)).strip("-") or fallback

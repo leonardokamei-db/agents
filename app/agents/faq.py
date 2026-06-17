@@ -16,7 +16,7 @@ from typing import List
 
 from app.agents.base import BaseAgent, build_messages, parse_handoff
 from app.domain import AgentResult, ChatMessage
-from app.prompts import faq_prompt
+from app.prompts import base_prompt, faq_prompt
 from app.rag import search_chunks
 
 log = logging.getLogger("blip-agent.faq")
@@ -34,6 +34,15 @@ class FAQAgent(BaseAgent):
         return faq_prompt(self.agent, [])
 
     async def execute(self, user_message: str, history: List[ChatMessage]) -> AgentResult:
+        # Feature flag (ponto 8): RAG desligado -> pula a recuperação (poupa o
+        # embedding) e responde pelo prompt base, com handoff se não souber.
+        if not self.agent.rag_enabled:
+            messages = build_messages(base_prompt(self.agent), user_message, history)
+            text, tokens = await self.llm.complete(messages)
+            should_handoff, clean, reason = parse_handoff(text)
+            return AgentResult(response=clean, should_handoff=should_handoff,
+                               handoff_reason=reason, source="llm", tokens_used=tokens)
+
         # Recuperação RAG (bloqueante -> worker thread).
         chunks = await asyncio.to_thread(search_chunks, self.agent.id, user_message)
 

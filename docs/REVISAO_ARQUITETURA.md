@@ -19,32 +19,33 @@ agora com o **status de implementação** (atualizado em **2026-06-17**).
 
 ## Status de implementação (2026-06-17)
 
-Execução em **11 fases**, na ordem de dependência. **6 fases concluídas e
-validadas** (import + smoke, incluindo LLM real e isolamento cross-tenant).
+Execução em **11 fases**, na ordem de dependência. **Todas as 11 fases concluídas
+e validadas** (import + smoke de migração legada + fluxo multi-tenant fresco +
+wiring HTTP via TestClient: RBAC, isolamento cross-tenant e feature flags).
 
 | Fase | Pontos | Status | Entrega |
 |------|--------|--------|---------|
 | 1 — Tipos e contratos | 3, 2, 13, 14, 16 | ✅ **Feito** (validado) | `app/domain.py` (`AgentConfig`, `AgentResult`, `ChatMessage`, `ProductRow`); agentes retornam `AgentResult`; `self.llm: LLMClient`; `complete_with_tools -> ChatCompletion`; dict opaco eliminado da cadeia |
-| 2 — Split de schemas | 11 | ✅ **Feito** | `app/schemas/` pacote (agent/chat/product/knowledge/shared) + `__init__` re-exporta |
-| 3 — Camada de dados | 15, 16 (+5) | ✅ **Feito** (validado) | `app/repositories/` (Agent/Product); `db.transaction()`/`read_connection()`; **WAL**; `WHERE agent_id=?` como invariante; `app/messages.py` (pt 5) |
+| 2 — Split de schemas | 11 | ✅ **Feito** | `app/schemas/` pacote (agent/chat/product/knowledge/tenant/shared) + `__init__` re-exporta |
+| 3 — Camada de dados | 15, 16 (+5) | ✅ **Feito** (validado) | `app/repositories/` (Agent/Product/Tenant/User/Membership); `db.transaction()`/`read_connection()`; **WAL**; escopo por tenant/agente como invariante; `app/messages.py` (pt 5) |
 | 4 — Erros centralizados | 10 | ✅ **Feito** (validado) | `app/errors.py` (`AppError`); handler único em `main.py`; regra degrade-vs-propagate (C2) |
 | 5 — Registry de tools | 17 | ✅ **Feito** (validado) | `app/tools.py` registry + args Pydantic; `PRODUCT_TOOLS` derivado da mesma fonte |
 | 7 — Orchestrator | 18 | ✅ **Feito** (validado) | `_select_agent` extraído; `Orchestrator` cacheado por `AgentConfig` (`lru_cache`) |
-| 6 — Camada de services | 12 | ⏳ **Pendente** | `app/services/` entre routers e domínio |
-| 8 — Entidade tenant | 19 | ⏳ **Pendente** | `tenants`/`users`/`memberships`, `tenant_id` em `agents`, migração p/ tenant `default`, credencial no tenant, `agent_id` prefixado |
-| 9 — RBAC + feature flags | 8 | ⏳ **Pendente** | papéis `owner`/`member`, flags `rag_enabled`/`external_products`; endurecer auth |
-| 10 — Observabilidade | 9, 6 | ⏳ **Pendente** | `request_id` + `contextvar` de tenant no log, `LOG_LEVEL`, `DEBUG.md`, logs no caminho feliz |
-| 11 — Workers/concorrência | 7 | ⏳ **Pendente** | Celery+Redis p/ ingestão (202) com fallback síncrono; WAL já feito na Fase 3 |
+| 6 — Camada de services | 12 | ✅ **Feito** (validado) | `app/services/` (Agent/Tenant/Product/Knowledge) injetados via `Depends`; routers só fazem HTTP↔service |
+| 8 — Entidade tenant | 19 | ✅ **Feito** (validado) | `tenants`/`users`/`memberships`; `agents.tenant_id`+`slug`; migração legada p/ tenant `default` (rebuild de `agents`, descarta `api_key` por agente); `id` prefixado `{tenant}__{slug}`; `rag.db` `tenant_id`→`agent_id`; rotas `/v1/tenants/...` |
+| 9 — RBAC + feature flags | 8 | ✅ **Feito** (validado) | `Principal` + `require_member`/`require_owner`/`require_platform_admin`; flags `rag_enabled`/`external_products` aplicadas em runtime (FAQAgent/catalog) e na validação; `GET` de agentes não expõe segredo |
+| 10 — Observabilidade | 9, 6 | ✅ **Feito** (validado) | `request_id` (middleware) + `contextvar` de tenant no formatter; `LOG_LEVEL`; `docs/DEBUG.md`; log no caminho feliz do OrderAgent; `error=str(e)`/`ChatResponse.error` removidos |
+| 11 — Workers/concorrência | 7 | ✅ **Feito** | `app/tasks.py` Celery+Redis: ingestão enfileira (202) com **fallback síncrono** sem broker; WAL já feito na Fase 3 |
 
-**Pontos positivos preservados (1, 4, 6):** `BaseAgent` virou ABC com
-`@abstractmethod` mas manteve o contrato `execute`; o padrão use-case `execute()`
+**Pontos positivos preservados (1, 4, 6):** `BaseAgent` segue ABC com
+`@abstractmethod` mantendo o contrato `execute`; o padrão use-case `execute()`
 segue idêntico em todas as subclasses; o logger hierárquico `blip-agent.*` foi
-mantido (a Fase 10 só o enriquece).
+mantido e **enriquecido** com correlação `req`/`tenant` na Fase 10.
 
-**Refinamento pendente (menor):** o caminho de erro do `Orchestrator` ainda
-inclui `error=str(e)` no corpo e o `ChatResponse.error` segue declarado — remover
-ambos é um ajuste da Fase 10 (a resposta ao usuário já usa a mensagem genérica
-centralizada, então não há vazamento na fala do bot).
+**Refinamento concluído:** o `error=str(e)` saiu do corpo de erro do
+`Orchestrator` e o campo `ChatResponse.error` foi removido — o detalhe técnico
+fica só no log (correlacionado por `req`/`tenant`); a fala do bot usa a mensagem
+genérica centralizada.
 
 ---
 
@@ -74,19 +75,19 @@ atacada:
 
 | # | Ponto | Criticidade | Status |
 |---|-------|-------------|--------|
-| 19 | Tenant fundido com agent (deveria ser tenant com N agents) | 🟠 Alto (fundacional) | ⏳ Fase 8 |
+| 19 | Tenant fundido com agent (deveria ser tenant com N agents) | 🟠 Alto (fundacional) | ✅ Fase 8 |
 | 15 | Sem repositório; SQL cru; tenant scoping manual | 🟠 Alto (fundacional) | ✅ Fase 3 |
 | 3 | Magic strings nas chaves de dicts (causa-raiz) | 🟠 Alto | ✅ Fase 1 |
 | 2 | Retorno do BaseAgent não tipado (dict genérico) | 🟠 Alto | ✅ Fase 1 |
 | 14 | `self.llm` e retorno de tools não tipados | 🟠 Alto | ✅ Fase 1 |
 | 16 | Queries/camada de dados sem tipo | 🟠 Alto | ✅ Fase 3 |
 | 10 | Sem camada única de erros; status codes espalhados | 🟠 Alto | ✅ Fase 4 |
-| 8 | Sem RBAC/feature flags; auth a endurecer (ADMIN_API_KEY global, `GET /v1/agents` expõe api_keys) | 🟠 Alto (após 19) | ⏳ Fase 9 |
+| 8 | Sem RBAC/feature flags; auth a endurecer (ADMIN_API_KEY global, `GET /v1/agents` expõe api_keys) | 🟠 Alto (após 19) | ✅ Fase 9 |
 | 5 | Strings de erro/copy espalhadas e divergentes | 🟡 Médio | ✅ Fase 3 |
 | 13 | Inputs estruturados não tipados | 🟡 Médio | ✅ Fase 1 |
-| 9 | Logging sem correlação por requisição/tenant; sem DEBUG.md | 🟡 Médio | ⏳ Fase 10 |
-| 7 | Threads vs workers (Celery) | 🟡 Médio | ⏳ Fase 11 |
-| 12 | Routers sem camada de service/handler | 🟡 Médio | ⏳ Fase 6 |
+| 9 | Logging sem correlação por requisição/tenant; sem DEBUG.md | 🟡 Médio | ✅ Fase 10 |
+| 7 | Threads vs workers (Celery) | 🟡 Médio | ✅ Fase 11 |
+| 12 | Routers sem camada de service/handler | 🟡 Médio | ✅ Fase 6 |
 | 18 | `orchestrator.py` / agentes recriados por request | 🟢 Baixo | ✅ Fase 7 |
 | 11 | `schemas.py` único | 🟢 Baixo | ✅ Fase 2 |
 | 17 | Estilo das tools vs LangGraph | 🟢 Baixo | ✅ Fase 5 |
@@ -119,14 +120,17 @@ injeta `intent/agent_used/confidence`. Por isso 2 e 18 foram feitos juntos.
 **admin/config/knowledge/products**, `AppError` **propaga** com status tipado via
 o handler único. (Falta só remover o `error=str(e)` residual — Fase 10.)
 
-### C3. O ponto 8 era segurança subestimada — ⏳ na Fase 9
-A `ADMIN_API_KEY` global autentica qualquer agente (default fraco) e
-`GET /v1/agents` expõe as api_keys. Por decisão de escopo, isso entra **dentro do
-ponto 8** (RBAC, Fase 9): credencial por tenant + parar de listar api_keys.
+### C3. O ponto 8 era segurança subestimada — ✅ resolvido
+**Resolução (Fase 9):** a credencial subiu para o **tenant** (e há chave por
+usuário com papel); a `ADMIN_API_KEY` virou superusuário **de plataforma**, não
+mais o passe-livre de qualquer agente. O `GET` de agentes **não expõe mais
+segredo** (o `AgentConfig`/`AgentPublic` não tem `api_key`). Auth resolvida em
+`deps._resolve_principal` (admin/owner/member) e validada por TestClient.
 
-### Ajuste de evidência (ponto 19) — ⏳ a tratar na Fase 8
-`rag.db` **já** usa a coluna `tenant_id` (rag.py), enquanto `core.db` usa
-`agent_id`. A migração do ponto 19 precisa **reconciliar essa nomenclatura**.
+### Ajuste de evidência (ponto 19) — ✅ resolvido na Fase 8
+`rag.db` usava `tenant_id` (na verdade o id do agente) e `core.db` usava
+`agent_id`. A migração **renomeou** `chunks.tenant_id`→`agent_id` (valor
+preservado), reconciliando a nomenclatura sem mover dados.
 
 ---
 
@@ -139,47 +143,63 @@ ponto 8** (RBAC, Fase 9): credencial por tenant + parar de listar api_keys.
                  ├─► 16 (dados tipados)│                                    [✅]
                  └─► 17 (tools) ◄──────┘   (17 depende de 13 e 14)          [✅]
 
-15 (repositório) ──┬─► 12 (services)                                        [15 ✅ / 12 ⏳]
+15 (repositório) ──┬─► 12 (services)                                        [✅]
                    ├─► 10 (camada de erros) ◄── 5 (copy centralizada)       [✅]
-                   ├─► 7 (concorrência/WAL)                                  [WAL ✅ / Celery ⏳]
-                   └─► (facilita) 19                                         [⏳]
+                   ├─► 7 (concorrência/WAL + Celery)                         [✅]
+                   └─► (facilita) 19                                         [✅]
 
-19 (entidade tenant) ──┬─► 8 (RBAC + feature flags)                         [⏳]
-                       └─► 9 (correlação de log por tenant)                 [⏳]
+19 (entidade tenant) ──┬─► 8 (RBAC + feature flags)                         [✅]
+                       └─► 9 (correlação de log por tenant)                 [✅]
 
 1, 4, 6 — positivos, preservados
 ```
 
-**Fundacionais:** 3 ✅, 15 ✅, 19 ⏳, 5 ✅.
+**Fundacionais:** 3 ✅, 15 ✅, 19 ✅, 5 ✅.
 
 ---
 
 ## Plano em fases (atual)
 
-Fases 1–5 e 7 ✅ concluídas e validadas. As próximas três (6, 8, 9) são a
-remodelagem multi-tenant e serão entregues juntas (compartilham rotas/auth).
+**Todas as 11 fases concluídas.** As fases 6, 8 e 9 foram entregues juntas (a
+remodelagem multi-tenant compartilha rotas/auth), seguidas de 10 (observabilidade)
+e 11 (workers).
 
 - **Fase 1 — Tipos compartilhados** ✅ — `domain.py`; `AgentResult`≠`ChatResponse`
   (C1); `2+18` juntos; `13/14/16`; registry de tools `17`.
-- **Fase 2 — Split de schemas** ✅ — `app/schemas/` pacote.
+- **Fase 2 — Split de schemas** ✅ — `app/schemas/` pacote (+ `tenant.py`).
 - **Fase 3 — Camada de dados + copy** ✅ — `repositories/`, `transaction()`, WAL,
-  tenant scoping invariante; `messages.py` (pt 5).
+  scoping invariante; `messages.py` (pt 5).
 - **Fase 4 — Erros únicos** ✅ — `errors.py` + handler; regra degrade/propagate (C2).
 - **Fase 5 — Registry de tools** ✅ — Pydantic args.
 - **Fase 7 — Orchestrator** ✅ — `_select_agent` + cache por agente.
-- **Fase 6 — Services** ⏳ — `app/services/` consumindo os repositórios, injetados
-  via `Depends` nos routers.
-- **Fase 8 — Entidade tenant (XL)** ⏳ — `tenants`/`users`/`memberships`;
-  `tenant_id` em `agents`; migração dos agentes atuais para um tenant `default`;
-  credencial no tenant; `agent_id` prefixado (resolve colisão de slug);
-  reconciliar `tenant_id`×`agent_id`. Rotas remodeladas (`/v1/tenants/...`).
-- **Fase 9 — RBAC + feature flags** ⏳ — papéis `owner`/`member` via `memberships`;
-  flags `rag_enabled`/`external_products`; endurecer auth (ponto 8/C3).
-- **Fase 10 — Observabilidade** ⏳ — `request_id` (middleware) + `contextvar` de
-  tenant no formatter; `LOG_LEVEL` por env; `docs/DEBUG.md`; logs no caminho feliz
-  do OrderAgent; remover `error=str(e)`/`ChatResponse.error`.
-- **Fase 11 — Workers/concorrência** ⏳ — Celery+Redis: ingestão de PDF enfileira
-  e retorna 202, com **fallback síncrono** quando não há broker (documentado).
+- **Fase 6 — Services** ✅ — `app/services/` (Agent/Tenant/Product/Knowledge)
+  consumindo os repositórios, injetados via `Depends`; routers ficaram finos.
+- **Fase 8 — Entidade tenant (XL)** ✅ — `tenants`/`users`/`memberships`;
+  `agents.tenant_id`+`slug`; migração dos agentes atuais para o tenant `default`
+  (rebuild de `agents`, `api_key` por agente descartada); `id` prefixado
+  `{tenant}__{slug}` (resolve colisão de slug); `rag.db` `tenant_id`→`agent_id`.
+  Rotas remodeladas (`/v1/tenants/{tenant_id}/agents/{slug}/...`).
+- **Fase 9 — RBAC + feature flags** ✅ — `Principal` + papéis `owner`/`member`
+  (membership) + `admin` de plataforma; flags `rag_enabled`/`external_products`
+  aplicadas; auth endurecida (sem api_key por agente, sem exposição na listagem).
+- **Fase 10 — Observabilidade** ✅ — `request_id` (middleware) + `contextvar` de
+  tenant no formatter; `LOG_LEVEL` por env; `docs/DEBUG.md`; log no caminho feliz
+  do OrderAgent; `error=str(e)`/`ChatResponse.error` removidos.
+- **Fase 11 — Workers/concorrência** ✅ — `app/tasks.py` Celery+Redis: ingestão
+  enfileira e retorna **202**, com **fallback síncrono** quando não há broker
+  (ativação documentada em `docs/DEBUG.md`).
+
+### Validação executada (smoke)
+
+- **Migração legada:** `core.db` no schema antigo (agente com `api_key`, sem
+  tenant) → reconstruído multi-tenant; produtos e RAG preservados; `rag.db`
+  renomeado; idempotente ao re-rodar.
+- **Fluxo fresco:** default+demo semeados; dois tenants com agente de mesmo slug
+  sem colisão (`acme__loja`≠`beta__loja`); isolamento de produtos; conflito de
+  slug no mesmo tenant; flag `external_products` bloqueando modo externo.
+- **RBAC (TestClient):** criar tenant exige admin (401→201); `GET`/`POST` de
+  agentes sem chave = 401; owner cria agente (201, **sem `api_key` no corpo**);
+  member não cria (403) mas lista (200); chave de um tenant em agente de outro = 403.
 
 ---
 

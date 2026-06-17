@@ -20,14 +20,15 @@
   .layout { flex: 1; display: flex; min-height: 0; }
 
   /* Sidebar */
-  aside { width: 250px; background: var(--panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
-  aside .side-head { padding: 12px 14px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  aside { width: 260px; background: var(--panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+  aside .side-head { padding: 12px 14px 4px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  aside .side-sub { padding: 0 14px 10px; }
   #agentList { flex: 1; overflow-y: auto; }
   .agent-item { padding: 10px 14px; cursor: pointer; border-left: 3px solid transparent; }
   .agent-item:hover { background: var(--panel2); }
   .agent-item.active { background: var(--panel2); border-left-color: var(--accent); }
   .agent-item .aid { font-size: 11px; color: var(--muted); }
-  aside .side-foot { padding: 12px; border-top: 1px solid var(--border); }
+  aside .side-foot { padding: 12px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
 
   /* Main */
   main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
@@ -46,10 +47,13 @@
   button.btn.secondary { background: var(--panel2); border: 1px solid var(--border); }
   button.btn.danger { background: var(--err); }
   button.btn.small { padding: 4px 10px; font-size: 12px; margin-top: 0; }
-  .form-card { max-width: 640px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; margin-bottom: 18px; }
+  .form-card { max-width: 660px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; margin-bottom: 18px; }
   .form-card h2 { font-size: 15px; margin-bottom: 4px; }
   .form-card .hint { font-size: 12px; color: var(--muted); }
   .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .check { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+  .check input { width: auto; }
+  .check label { margin: 0; }
 
   /* Tables */
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -87,8 +91,13 @@
 
 <div class="layout">
   <aside>
+    <div class="side-head">Tenant</div>
+    <div class="side-sub">
+      <select id="tenantSelect"><option value="">— conecte —</option></select>
+      <button class="btn secondary small" id="newTenantBtn" style="width:100%;margin-top:8px">+ Novo tenant</button>
+    </div>
     <div class="side-head">Agentes</div>
-    <div id="agentList"><div class="empty">Conecte com a chave de admin.</div></div>
+    <div id="agentList"><div class="empty">Selecione um tenant.</div></div>
     <div class="side-foot">
       <button class="btn secondary small" id="newAgentBtn" style="width:100%">+ Novo agente</button>
     </div>
@@ -100,16 +109,35 @@
       <button data-tab="configTab">Configuração</button>
       <button data-tab="knowledgeTab">Conhecimento</button>
       <button data-tab="productsTab">Produtos</button>
+      <button data-tab="membersTab">Membros</button>
     </nav>
 
-    <!-- Criar agente -->
-    <div class="tab-body" id="createTab">
+    <!-- Criar tenant -->
+    <div class="tab-body hidden" id="createTenantTab">
       <div class="form-card">
-        <h2>Novo agente</h2>
-        <p class="hint">Ao criar, o endpoint <code>/v1/agents/{id}/chat</code> passa a aceitar requisições imediatamente.</p>
+        <h2>Novo tenant</h2>
+        <p class="hint">Um tenant é dono de N agentes. Criar gera a <b>chave do tenant</b> (consumo/chat) e o primeiro usuário <b>owner</b>.</p>
+        <div class="row2">
+          <div><label>Nome *</label><input id="t_name" placeholder="Acme Ltda"></div>
+          <div><label>ID (slug, opcional)</label><input id="t_id" placeholder="acme"></div>
+        </div>
+        <div class="row2">
+          <div><label>E-mail do owner *</label><input id="t_owner_email" placeholder="dono@acme.com"></div>
+          <div><label>Nome do owner</label><input id="t_owner_name" placeholder="Maria"></div>
+        </div>
+        <button class="btn" id="createTenantBtn">Criar tenant</button>
+        <div id="tenantCreated" class="hidden" style="margin-top:14px; font-size:13px;"></div>
+      </div>
+    </div>
+
+    <!-- Criar agente -->
+    <div class="tab-body hidden" id="createAgentTab">
+      <div class="form-card">
+        <h2>Novo agente <span class="badge" id="ca_tenant"></span></h2>
+        <p class="hint">Ao criar, o endpoint <code>/v1/tenants/{tenant}/agents/{slug}/chat</code> passa a responder imediatamente.</p>
         <div class="row2">
           <div><label>Nome *</label><input id="c_name" placeholder="Minha Loja"></div>
-          <div><label>ID (slug, opcional)</label><input id="c_id" placeholder="minha-loja"></div>
+          <div><label>Slug (opcional)</label><input id="c_slug" placeholder="minha-loja"></div>
         </div>
         <label>System prompt (vazio = padrão compacto)</label>
         <textarea id="c_prompt" placeholder="Você é o assistente virtual de..."></textarea>
@@ -130,8 +158,11 @@
           <div><label>URL da API de produtos (modo externo)</label><input id="c_purl" placeholder="https://api.cliente.com/products"></div>
           <div><label>Chave da API de produtos (opcional)</label><input id="c_pkey"></div>
         </div>
+        <div class="row2">
+          <div class="check"><input type="checkbox" id="c_rag" checked><label>RAG habilitado</label></div>
+          <div class="check"><input type="checkbox" id="c_ext" checked><label>Catálogo externo permitido</label></div>
+        </div>
         <button class="btn" id="createAgentBtn">Criar agente</button>
-        <div id="createdInfo" class="hidden" style="margin-top:14px; font-size:13px;"></div>
       </div>
     </div>
 
@@ -149,7 +180,7 @@
     <div class="tab-body hidden" id="configTab">
       <div class="form-card">
         <h2>Configuração <span class="badge" id="cfg_endpoint"></span></h2>
-        <p class="hint">API key do agente: <code class="key" id="cfg_apikey"></code></p>
+        <p class="hint">ID global: <code class="key" id="cfg_id"></code></p>
         <label>Nome</label><input id="e_name">
         <label>System prompt (vazio = padrão compacto)</label><textarea id="e_prompt"></textarea>
         <label>Regras de negócio</label><textarea id="e_rules"></textarea>
@@ -167,6 +198,10 @@
         <div class="row2">
           <div><label>URL da API de produtos</label><input id="e_purl"></div>
           <div><label>Chave da API de produtos</label><input id="e_pkey" placeholder="(inalterada se vazio)"></div>
+        </div>
+        <div class="row2">
+          <div class="check"><input type="checkbox" id="e_rag"><label>RAG habilitado</label></div>
+          <div class="check"><input type="checkbox" id="e_ext"><label>Catálogo externo permitido</label></div>
         </div>
         <button class="btn" id="saveConfigBtn">Salvar e sincronizar</button>
         <button class="btn danger" id="deleteAgentBtn">Excluir agente</button>
@@ -219,12 +254,37 @@
         <div class="empty hidden" id="productsEmpty">Nenhum produto.</div>
       </div>
     </div>
+
+    <!-- Membros -->
+    <div class="tab-body hidden" id="membersTab">
+      <div class="form-card">
+        <h2>Adicionar membro <span class="badge" id="mb_tenant"></span></h2>
+        <p class="hint">A api_key do usuário é exibida só ao convidar. <b>owner</b> gerencia agentes e membros; <b>member</b> tem leitura, chat e conteúdo.</p>
+        <div class="row2">
+          <div><label>E-mail *</label><input id="mb_email" placeholder="pessoa@acme.com"></div>
+          <div><label>Papel</label><select id="mb_role"><option value="member">member</option><option value="owner">owner</option></select></div>
+        </div>
+        <button class="btn" id="addMemberBtn">Convidar</button>
+        <div id="memberCreated" class="hidden" style="margin-top:12px;font-size:13px;"></div>
+      </div>
+      <div class="form-card">
+        <h2>Membros do tenant</h2>
+        <table>
+          <thead><tr><th>E-mail</th><th>Papel</th><th></th></tr></thead>
+          <tbody id="membersBody"></tbody>
+        </table>
+      </div>
+    </div>
   </main>
 </div>
 
 <script>
 const $ = (id) => document.getElementById(id);
-const state = { adminKey: localStorage.getItem('blip_admin_key') || '', agents: [], current: null, history: [] };
+const state = {
+  adminKey: localStorage.getItem('blip_admin_key') || '',
+  tenants: [], tenantKeys: {}, currentTenant: null,
+  agents: [], current: null, history: [],
+};
 $('adminKey').value = state.adminKey;
 
 function toast(msg, isError = false) {
@@ -235,10 +295,12 @@ function toast(msg, isError = false) {
   setTimeout(() => el.remove(), 4500);
 }
 
-async function api(path, opts = {}, key = null) {
+// O painel é ferramenta de admin: a X-Admin-Key autentica rotas de plataforma e,
+// enviada como X-API-Key, também autentica as rotas de tenant (admin = superusuário).
+async function api(path, opts = {}, apiKey = null) {
   const headers = opts.headers || {};
-  if (key) headers['X-API-Key'] = key;
   headers['X-Admin-Key'] = state.adminKey;
+  headers['X-API-Key'] = apiKey || state.adminKey;
   if (opts.body && !(opts.body instanceof FormData)) headers['Content-Type'] = 'application/json';
   const resp = await fetch(path, { ...opts, headers });
   if (!resp.ok) {
@@ -246,23 +308,74 @@ async function api(path, opts = {}, key = null) {
     try { detail = (await resp.json()).detail || detail; } catch {}
     throw new Error(detail);
   }
-  return resp.json();
+  return resp.status === 204 ? null : resp.json();
 }
 
-// API key do agente atual (rotas por agente aceitam também a chave admin,
-// mas usamos a do agente para refletir o uso real do cliente).
-const agentKey = () => state.current ? state.current.api_key : null;
+const tid = () => state.currentTenant ? state.currentTenant.id : null;
+// Chave usada no chat: a do tenant quando conhecida (reflete o consumo real); senão admin.
+const chatKey = () => (state.currentTenant && state.tenantKeys[tid()]) || null;
+const agentBase = () => `/v1/tenants/${tid()}/agents/${state.current.slug}`;
+
+// ---------------- Tenants ---------------- //
+
+async function connect() {
+  state.adminKey = $('adminKey').value.trim();
+  localStorage.setItem('blip_admin_key', state.adminKey);
+  try {
+    state.tenants = await api('/v1/tenants');
+    renderTenantSelect();
+    toast(`${state.tenants.length} tenant(s) carregado(s).`);
+    if (state.tenants.length) selectTenant(state.tenants[0].id);
+  } catch (e) { toast('Falha ao conectar: ' + e.message, true); }
+}
+
+function renderTenantSelect() {
+  const sel = $('tenantSelect');
+  sel.innerHTML = state.tenants.length
+    ? state.tenants.map(t => `<option value="${t.id}">${t.name} (${t.id})</option>`).join('')
+    : '<option value="">— nenhum tenant —</option>';
+  if (state.currentTenant) sel.value = state.currentTenant.id;
+}
+
+async function selectTenant(id) {
+  state.currentTenant = state.tenants.find(t => t.id === id) || null;
+  $('tenantSelect').value = id || '';
+  state.current = null;
+  $('tabs').classList.add('hidden');
+  await loadAgents();
+}
+
+$('tenantSelect').onchange = (e) => selectTenant(e.target.value);
+$('connectBtn').onclick = connect;
+$('newTenantBtn').onclick = () => { $('tabs').classList.add('hidden'); showTab('createTenantTab'); };
+
+$('createTenantBtn').onclick = async () => {
+  try {
+    const t = await api('/v1/tenants', { method: 'POST', body: JSON.stringify({
+      id: $('t_id').value.trim() || null,
+      name: $('t_name').value.trim(),
+      owner_email: $('t_owner_email').value.trim(),
+      owner_name: $('t_owner_name').value.trim(),
+    })});
+    state.tenantKeys[t.id] = t.api_key;
+    $('tenantCreated').classList.remove('hidden');
+    $('tenantCreated').innerHTML =
+      `✅ Tenant <b>${t.id}</b> criado.<br>Chave do tenant (consumo/chat): <code class="key">${t.api_key}</code><br>` +
+      `Owner ${t.owner_email} — api_key: <code class="key">${t.owner_api_key}</code><br><span class="hint">Guarde: exibidas só agora.</span>`;
+    state.tenants = await api('/v1/tenants');
+    renderTenantSelect();
+    toast('Tenant criado: ' + t.id);
+  } catch (e) { toast(e.message, true); }
+};
 
 // ---------------- Agentes ---------------- //
 
 async function loadAgents() {
-  state.adminKey = $('adminKey').value.trim();
-  localStorage.setItem('blip_admin_key', state.adminKey);
+  if (!tid()) { $('agentList').innerHTML = '<div class="empty">Selecione um tenant.</div>'; return; }
   try {
-    state.agents = await api('/v1/agents');
+    state.agents = await api(`/v1/tenants/${tid()}/agents`);
     renderAgentList();
-    toast(`${state.agents.length} agente(s) carregado(s).`);
-  } catch (e) { toast('Falha ao conectar: ' + e.message, true); }
+  } catch (e) { toast('Falha ao listar agentes: ' + e.message, true); }
 }
 
 function renderAgentList() {
@@ -272,7 +385,7 @@ function renderAgentList() {
   for (const a of state.agents) {
     const div = document.createElement('div');
     div.className = 'agent-item' + (state.current && state.current.id === a.id ? ' active' : '');
-    div.innerHTML = `<div>${a.name}</div><div class="aid">${a.endpoint}</div>`;
+    div.innerHTML = `<div>${a.name}</div><div class="aid">${a.slug}</div>`;
     div.onclick = () => selectAgent(a.id);
     box.appendChild(div);
   }
@@ -290,13 +403,18 @@ async function selectAgent(id) {
   refreshProducts();
 }
 
-$('connectBtn').onclick = loadAgents;
-$('newAgentBtn').onclick = () => { state.current = null; renderAgentList(); $('tabs').classList.add('hidden'); showTab('createTab'); };
+$('newAgentBtn').onclick = () => {
+  if (!tid()) return toast('Selecione um tenant primeiro.', true);
+  state.current = null; renderAgentList();
+  $('tabs').classList.add('hidden');
+  $('ca_tenant').textContent = tid();
+  showTab('createAgentTab');
+};
 
 $('createAgentBtn').onclick = async () => {
   try {
-    const created = await api('/v1/agents', { method: 'POST', body: JSON.stringify({
-      id: $('c_id').value.trim() || null,
+    const created = await api(`/v1/tenants/${tid()}/agents`, { method: 'POST', body: JSON.stringify({
+      slug: $('c_slug').value.trim() || null,
       name: $('c_name').value.trim(),
       system_prompt: $('c_prompt').value,
       business_rules: $('c_rules').value,
@@ -304,23 +422,23 @@ $('createAgentBtn').onclick = async () => {
       product_mode: $('c_pmode').value,
       product_api_url: $('c_purl').value.trim(),
       product_api_key: $('c_pkey').value.trim(),
+      rag_enabled: $('c_rag').checked,
+      external_products: $('c_ext').checked,
     })});
-    $('createdInfo').classList.remove('hidden');
-    $('createdInfo').innerHTML =
-      `✅ Agente criado! Endpoint: <code class="key">POST ${created.endpoint}</code><br>` +
-      `API key (guarde, é exibida só aqui): <code class="key">${created.api_key}</code>`;
     await loadAgents();
-    toast('Agente criado: ' + created.id);
+    toast('Agente criado: ' + created.slug);
+    selectAgent(created.id);
   } catch (e) { toast(e.message, true); }
 };
 
 // ---------------- Tabs ---------------- //
 
+const ALL_TABS = ['createTenantTab', 'createAgentTab', 'chatTab', 'configTab', 'knowledgeTab', 'productsTab', 'membersTab'];
 function showTab(id) {
-  for (const t of ['createTab', 'chatTab', 'configTab', 'knowledgeTab', 'productsTab'])
-    $(t).classList.toggle('hidden', t !== id);
+  for (const t of ALL_TABS) $(t).classList.toggle('hidden', t !== id);
   document.querySelectorAll('nav.tabs button').forEach(b =>
     b.classList.toggle('active', b.dataset.tab === id));
+  if (id === 'membersTab') refreshMembers();
 }
 document.querySelectorAll('nav.tabs button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
 
@@ -333,10 +451,10 @@ $('chatForm').onsubmit = async (ev) => {
   $('chatInput').value = '';
   addMsg('user', text);
   try {
-    const r = await api(`/v1/agents/${state.current.id}/chat`, {
+    const r = await api(`${agentBase()}/chat`, {
       method: 'POST',
       body: JSON.stringify({ message: text, history: state.history }),
-    }, agentKey());
+    }, chatKey());
     state.history.push({ role: 'user', content: text });
     state.history.push({ role: 'assistant', content: r.response });
     addMsg('bot', r.response, r);
@@ -373,7 +491,7 @@ $('clearChatBtn').onclick = () => {
 function fillConfig() {
   const a = state.current;
   $('cfg_endpoint').textContent = 'POST ' + a.endpoint;
-  $('cfg_apikey').textContent = a.api_key;
+  $('cfg_id').textContent = a.id;
   $('e_name').value = a.name;
   $('e_prompt').value = a.system_prompt;
   $('e_rules').value = a.business_rules;
@@ -381,6 +499,8 @@ function fillConfig() {
   $('e_pmode').value = a.product_mode;
   $('e_purl').value = a.product_api_url;
   $('e_pkey').value = '';
+  $('e_rag').checked = !!a.rag_enabled;
+  $('e_ext').checked = !!a.external_products;
 }
 
 $('saveConfigBtn').onclick = async () => {
@@ -392,9 +512,11 @@ $('saveConfigBtn').onclick = async () => {
       max_turns: parseInt($('e_turns').value) || 15,
       product_mode: $('e_pmode').value,
       product_api_url: $('e_purl').value.trim(),
+      rag_enabled: $('e_rag').checked,
+      external_products: $('e_ext').checked,
     };
     if ($('e_pkey').value.trim()) body.product_api_key = $('e_pkey').value.trim();
-    await api(`/v1/agents/${state.current.id}/config`, { method: 'PUT', body: JSON.stringify(body) }, agentKey());
+    await api(`${agentBase()}/config`, { method: 'PUT', body: JSON.stringify(body) });
     await loadAgents();
     state.current = state.agents.find(a => a.id === state.current.id);
     fillConfig();
@@ -406,10 +528,9 @@ $('saveConfigBtn').onclick = async () => {
 $('deleteAgentBtn').onclick = async () => {
   if (!confirm(`Excluir o agente "${state.current.name}" e todos os seus dados?`)) return;
   try {
-    await api(`/v1/agents/${state.current.id}`, { method: 'DELETE' });
+    await api(agentBase(), { method: 'DELETE' });
     state.current = null;
     $('tabs').classList.add('hidden');
-    showTab('createTab');
     await loadAgents();
     toast('Agente excluído.');
   } catch (e) { toast(e.message, true); }
@@ -425,8 +546,8 @@ $('uploadPdfBtn').onclick = async () => {
   fd.append('source_name', name);
   fd.append('file', file);
   try {
-    const r = await api(`/v1/agents/${state.current.id}/knowledge/pdf`, { method: 'POST', body: fd }, agentKey());
-    toast(`PDF indexado: ${r.chunks_created} chunks.`);
+    const r = await api(`${agentBase()}/knowledge/pdf`, { method: 'POST', body: fd }, chatKey());
+    toast(r.status === 'queued' ? `PDF enfileirado (task ${r.task_id}).` : `PDF indexado: ${r.chunks_created} chunks.`);
     $('k_pdffile').value = ''; $('k_pdfname').value = '';
     refreshSources();
   } catch (e) { toast(e.message, true); }
@@ -436,10 +557,10 @@ $('ingestTextBtn').onclick = async () => {
   const name = $('k_txtname').value.trim(), text = $('k_txt').value.trim();
   if (!name || !text) return toast('Informe o nome da fonte e o texto.', true);
   try {
-    const r = await api(`/v1/agents/${state.current.id}/knowledge/text`, {
+    const r = await api(`${agentBase()}/knowledge/text`, {
       method: 'POST', body: JSON.stringify({ source_name: name, text }),
-    }, agentKey());
-    toast(`Texto indexado: ${r.chunks_created} chunks.`);
+    }, chatKey());
+    toast(r.status === 'queued' ? `Texto enfileirado (task ${r.task_id}).` : `Texto indexado: ${r.chunks_created} chunks.`);
     $('k_txt').value = ''; $('k_txtname').value = '';
     refreshSources();
   } catch (e) { toast(e.message, true); }
@@ -448,7 +569,7 @@ $('ingestTextBtn').onclick = async () => {
 async function refreshSources() {
   if (!state.current) return;
   try {
-    const sources = await api(`/v1/agents/${state.current.id}/knowledge/sources`, {}, agentKey());
+    const sources = await api(`${agentBase()}/knowledge/sources`, {}, chatKey());
     const body = $('sourcesBody');
     body.innerHTML = sources.length ? '' : '<tr><td colspan="4" class="empty">Nenhuma fonte indexada.</td></tr>';
     for (const s of sources) {
@@ -459,8 +580,7 @@ async function refreshSources() {
       btn.className = 'btn danger small';
       btn.textContent = 'Excluir';
       btn.onclick = async () => {
-        await api(`/v1/agents/${state.current.id}/knowledge/sources/${encodeURIComponent(s.source_name)}`,
-                  { method: 'DELETE' }, agentKey());
+        await api(`${agentBase()}/knowledge/sources/${encodeURIComponent(s.source_name)}`, { method: 'DELETE' }, chatKey());
         refreshSources();
       };
       td.appendChild(btn);
@@ -483,7 +603,7 @@ async function refreshProducts() {
   body.innerHTML = '';
   if (state.current.product_mode === 'none') { $('productsEmpty').classList.remove('hidden'); return; }
   try {
-    const products = await api(`/v1/agents/${state.current.id}/products`, {}, agentKey());
+    const products = await api(`${agentBase()}/products`, {}, chatKey());
     $('productsEmpty').classList.toggle('hidden', products.length > 0);
     for (const p of products) {
       const tr = document.createElement('tr');
@@ -498,15 +618,15 @@ async function refreshProducts() {
         const actTd = document.createElement('td');
         const save = Object.assign(document.createElement('button'), { className: 'btn small', textContent: 'Salvar' });
         save.onclick = async () => {
-          await api(`/v1/agents/${state.current.id}/products/${p.id}`, {
+          await api(`${agentBase()}/products/${p.id}`, {
             method: 'PUT', body: JSON.stringify({ price: parseFloat(priceIn.value), stock: parseInt(stockIn.value) }),
-          }, agentKey());
+          }, chatKey());
           toast('Produto atualizado.');
         };
         const del = Object.assign(document.createElement('button'), { className: 'btn danger small', textContent: '✕' });
         del.style.marginLeft = '6px';
         del.onclick = async () => {
-          await api(`/v1/agents/${state.current.id}/products/${p.id}`, { method: 'DELETE' }, agentKey());
+          await api(`${agentBase()}/products/${p.id}`, { method: 'DELETE' }, chatKey());
           refreshProducts();
         };
         actTd.append(save, del);
@@ -523,21 +643,60 @@ async function refreshProducts() {
 $('addProductBtn').onclick = async () => {
   if (!$('p_name').value.trim() || !$('p_price').value) return toast('Nome e preço são obrigatórios.', true);
   try {
-    await api(`/v1/agents/${state.current.id}/products`, { method: 'POST', body: JSON.stringify({
+    await api(`${agentBase()}/products`, { method: 'POST', body: JSON.stringify({
       name: $('p_name').value.trim(),
       description: $('p_desc').value.trim(),
       price: parseFloat($('p_price').value),
       stock: parseInt($('p_stock').value) || 0,
-    })}, agentKey());
+    })}, chatKey());
     $('p_name').value = $('p_desc').value = $('p_price').value = ''; $('p_stock').value = '0';
     refreshProducts();
     toast('Produto adicionado.');
   } catch (e) { toast(e.message, true); }
 };
 
+// ---------------- Membros ---------------- //
+
+$('addMemberBtn').onclick = async () => {
+  const email = $('mb_email').value.trim();
+  if (!email || !tid()) return toast('Informe o e-mail.', true);
+  try {
+    const r = await api(`/v1/tenants/${tid()}/members`, { method: 'POST', body: JSON.stringify({
+      email, role: $('mb_role').value,
+    })});
+    $('memberCreated').classList.remove('hidden');
+    $('memberCreated').innerHTML = `✅ ${r.email} (${r.role}) — api_key: <code class="key">${r.api_key}</code> <span class="hint">(exibida só agora)</span>`;
+    $('mb_email').value = '';
+    refreshMembers();
+    toast('Membro adicionado.');
+  } catch (e) { toast(e.message, true); }
+};
+
+async function refreshMembers() {
+  if (!tid()) return;
+  $('mb_tenant').textContent = tid();
+  try {
+    const members = await api(`/v1/tenants/${tid()}/members`);
+    const body = $('membersBody');
+    body.innerHTML = members.length ? '' : '<tr><td colspan="3" class="empty">Sem membros.</td></tr>';
+    for (const mem of members) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${mem.email}</td><td>${mem.role}</td>`;
+      const td = document.createElement('td');
+      const btn = document.createElement('button');
+      btn.className = 'btn danger small';
+      btn.textContent = 'Remover';
+      btn.onclick = async () => {
+        try { await api(`/v1/tenants/${tid()}/members/${mem.user_id}`, { method: 'DELETE' }); refreshMembers(); }
+        catch (e) { toast(e.message, true); }
+      };
+      td.appendChild(btn); tr.appendChild(td); body.appendChild(tr);
+    }
+  } catch (e) { toast(e.message, true); }
+}
+
 // Autoconnect se já houver chave salva.
-if (state.adminKey) loadAgents();
-showTab('createTab');
+if (state.adminKey) connect();
 </script>
 </body>
 </html>

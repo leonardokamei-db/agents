@@ -24,6 +24,7 @@ from typing import Any, Literal, Mapping, Optional, TypedDict
 
 Role = Literal["system", "user", "assistant", "tool"]
 ProductMode = Literal["none", "internal", "external"]
+MemberRole = Literal["owner", "member"]
 
 
 class ChatMessage(TypedDict):
@@ -33,31 +34,114 @@ class ChatMessage(TypedDict):
 
 
 @dataclass(frozen=True)
-class AgentConfig:
-    """Configuração de um agente (tenant), tipada. Espelha a tabela `agents`."""
+class Tenant:
+    """Cliente da plataforma — dono de N agentes (ponto 19).
+
+    A credencial de consumo/gerência sobe para este nível: `api_key` é a chave
+    master do tenant (papel owner sobre seus agentes). Substitui a antiga
+    api_key por agente.
+    """
     id: str
     name: str
     api_key: str
+    created_at: str = ""
+
+    @classmethod
+    def from_row(cls, row: Mapping[str, Any]) -> "Tenant":
+        return cls(
+            id=row["id"],
+            name=row["name"],
+            api_key=row["api_key"],
+            created_at=str(row["created_at"]) if row["created_at"] is not None else "",
+        )
+
+
+@dataclass(frozen=True)
+class User:
+    """Usuário da plataforma. Autentica por `api_key`; o papel vem da membership."""
+    id: str
+    email: str
+    name: str = ""
+    api_key: str = ""
+    created_at: str = ""
+
+    @classmethod
+    def from_row(cls, row: Mapping[str, Any]) -> "User":
+        return cls(
+            id=row["id"],
+            email=row["email"],
+            name=row["name"] or "",
+            api_key=row["api_key"],
+            created_at=str(row["created_at"]) if row["created_at"] is not None else "",
+        )
+
+
+@dataclass(frozen=True)
+class Membership:
+    """Vínculo usuário↔tenant com papel (RBAC mínimo — ponto 8)."""
+    tenant_id: str
+    user_id: str
+    role: MemberRole = "member"
+
+    @classmethod
+    def from_row(cls, row: Mapping[str, Any]) -> "Membership":
+        return cls(tenant_id=row["tenant_id"], user_id=row["user_id"], role=row["role"])
+
+
+@dataclass(frozen=True)
+class Principal:
+    """Quem está fazendo a requisição, já resolvido (ponto 8).
+
+    `role` rege o RBAC: "admin" (plataforma) e "owner" têm controle total no
+    escopo; "member" tem leitura + chat + conteúdo, sem gerir agentes/membros.
+    """
+    role: Literal["admin", "owner", "member"]
+    tenant_id: Optional[str] = None
+    user_id: Optional[str] = None
+
+    @property
+    def can_manage(self) -> bool:
+        """Pode criar/excluir agentes e gerir membros."""
+        return self.role in ("admin", "owner")
+
+
+@dataclass(frozen=True)
+class AgentConfig:
+    """Configuração de um agente, tipada. Espelha a tabela `agents`.
+
+    `id` é a PK opaca e globalmente única (novos agentes nascem `{tenant}__{slug}`,
+    o que resolve colisão de slug entre tenants — ponto 19). O caminho da API usa
+    o `slug` dentro do tenant. Sem `api_key`: a credencial vive no tenant.
+    """
+    id: str
+    tenant_id: str
+    slug: str
+    name: str
     system_prompt: str = ""
     business_rules: str = ""
     max_turns: int = 15
     product_mode: ProductMode = "none"
     product_api_url: str = ""
     product_api_key: str = ""
+    rag_enabled: bool = True
+    external_products: bool = True
     created_at: str = ""
 
     @classmethod
     def from_row(cls, row: Mapping[str, Any]) -> "AgentConfig":
         return cls(
             id=row["id"],
+            tenant_id=row["tenant_id"],
+            slug=row["slug"],
             name=row["name"],
-            api_key=row["api_key"],
             system_prompt=row["system_prompt"] or "",
             business_rules=row["business_rules"] or "",
             max_turns=row["max_turns"],
             product_mode=row["product_mode"],
             product_api_url=row["product_api_url"] or "",
             product_api_key=row["product_api_key"] or "",
+            rag_enabled=bool(row["rag_enabled"]),
+            external_products=bool(row["external_products"]),
             created_at=str(row["created_at"]) if row["created_at"] is not None else "",
         )
 

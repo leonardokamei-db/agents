@@ -38,13 +38,15 @@ def _connect() -> sqlite3.Connection:
 
 
 def init_rag_db() -> None:
-    """Cria as tabelas de chunks e embeddings se não existirem (idempotente)."""
+    """Cria as tabelas de chunks e embeddings se não existirem (idempotente) e
+    reconcilia a nomenclatura legada: a coluna de escopo passou de `tenant_id`
+    para `agent_id` (ponto 19) — o valor segue sendo o id do agente."""
     conn = _connect()
     try:
         conn.executescript(f"""
             CREATE TABLE IF NOT EXISTS chunks (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                tenant_id TEXT NOT NULL,
+                agent_id TEXT NOT NULL,
                 source_name TEXT NOT NULL,
                 chunk_index INTEGER NOT NULL,
                 content TEXT NOT NULL,
@@ -55,6 +57,10 @@ def init_rag_db() -> None:
                 embedding FLOAT[{config.EMBEDDING_DIM}]
             );
         """)
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(chunks)").fetchall()}
+        if "tenant_id" in cols and "agent_id" not in cols:
+            conn.execute("ALTER TABLE chunks RENAME COLUMN tenant_id TO agent_id")
+            log.warning("rag.db migrado: coluna chunks.tenant_id -> agent_id.")
         conn.commit()
     finally:
         conn.close()
@@ -187,7 +193,7 @@ def ingest_text(agent_id: str, text: str, source_name: str) -> dict:
         _delete_source_rows(conn, agent_id, source_name)
         for i, (chunk, emb) in enumerate(zip(chunks, embeddings)):
             cur = conn.execute(
-                "INSERT INTO chunks (tenant_id, source_name, chunk_index, content) "
+                "INSERT INTO chunks (agent_id, source_name, chunk_index, content) "
                 "VALUES (?, ?, ?, ?)",
                 (agent_id, source_name, i, chunk),
             )
@@ -249,7 +255,7 @@ def search_chunks(agent_id: str, query: str, top_k: int = config.RAG_TOP_K) -> l
             SELECT c.content, c.source_name, c.chunk_index, ce.distance
             FROM chunk_embeddings ce
             JOIN chunks c ON c.id = ce.chunk_id
-            WHERE c.tenant_id = ? AND ce.embedding MATCH ? AND k = ?
+            WHERE c.agent_id = ? AND ce.embedding MATCH ? AND k = ?
             ORDER BY ce.distance
             """,
             (agent_id, query_embedding.astype(np.float32).tobytes(), top_k * 3),
@@ -269,7 +275,7 @@ def list_sources(agent_id: str) -> list[dict]:
         rows = conn.execute(
             """
             SELECT source_name, COUNT(*) AS chunk_count, MAX(created_at) AS last_updated
-            FROM chunks WHERE tenant_id = ?
+            FROM chunks WHERE agent_id = ?
             GROUP BY source_name ORDER BY last_updated DESC
             """,
             (agent_id,),
@@ -304,12 +310,12 @@ def delete_agent_data(agent_id: str) -> int:
 
 def _delete_source_rows(conn: sqlite3.Connection, agent_id: str, source_name: str) -> int:
     ids = [r[0] for r in conn.execute(
-        "SELECT id FROM chunks WHERE tenant_id=? AND source_name=?",
+        "SELECT id FROM chunks WHERE agent_id=? AND source_name=?",
         (agent_id, source_name),
     ).fetchall()]
     if ids:
         placeholders = ",".join("?" * len(ids))
         conn.execute(f"DELETE FROM chunk_embeddings WHERE chunk_id IN ({placeholders})", ids)
-        conn.execute("DELETE FROM chunks WHERE tenant_id=? AND source_name=?",
+        conn.execute("DELETE FROM chunks WHERE agent_id=? AND source_name=?",
                      (agent_id, source_name))
     return len(ids)

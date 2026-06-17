@@ -34,11 +34,25 @@ CORE_DB_PATH = DB_DIR / "core.db"   # agents + products
 RAG_DB_PATH = DB_DIR / "rag.db"     # chunks + embeddings
 
 # --- Administração ------------------------------------------------------------ #
-# Chave usada para criar/listar/excluir agentes. Defina em produção!
+# Chave de plataforma: cria/lista/exclui TENANTS e é superusuário em qualquer
+# tenant. Cada tenant tem ainda sua própria api_key (gerencia os agentes dele) e
+# usuários têm chaves com papel owner/member. Defina ADMIN_API_KEY em produção!
 ADMIN_API_KEY = os.getenv("ADMIN_API_KEY", "admin-dev-key")
 
-# Cria um agente "demo" no primeiro boot quando o banco está vazio (1 = sim).
+# Cria um tenant "default" + agente "demo" no primeiro boot com banco vazio.
 SEED_DEMO = os.getenv("SEED_DEMO", "1") == "1"
+
+# Tenant para o qual os agentes legados (sem tenant) são migrados.
+DEFAULT_TENANT_ID = os.getenv("DEFAULT_TENANT_ID", "default")
+
+# --- Observabilidade (ponto 9) ---------------------------------------------- #
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+
+# --- Workers / fila (ponto 7) ----------------------------------------------- #
+# Com um broker Redis configurado, a ingestão de PDF é enfileirada (202) e
+# processada por um worker Celery. Sem broker, cai no caminho SÍNCRONO (atual).
+REDIS_URL = os.getenv("REDIS_URL", "")
+CELERY_ENABLED = bool(REDIS_URL)
 
 # --- Roteamento ---------------------------------------------------------------- #
 CONFIDENCE_THRESHOLD = 0.7

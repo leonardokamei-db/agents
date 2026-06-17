@@ -1,4 +1,6 @@
-"""Schemas de agentes (tenants)."""
+"""Schemas de agentes. O agente pertence a um tenant; a credencial vive no
+tenant (não há api_key por agente). `slug` é o segmento de rota dentro do
+tenant; `id` é a PK opaca global."""
 
 from typing import Optional
 
@@ -8,7 +10,7 @@ from app.schemas.shared import ProductMode
 
 
 class AgentCreate(BaseModel):
-    id: Optional[str] = Field(default=None, description="Slug do agente (gerado a partir do nome se omitido)")
+    slug: Optional[str] = Field(default=None, description="Slug dentro do tenant (gerado do nome se omitido)")
     name: str
     system_prompt: str = ""          # vazio -> usa o prompt padrão compacto
     business_rules: str = ""
@@ -16,6 +18,8 @@ class AgentCreate(BaseModel):
     product_mode: ProductMode = "none"
     product_api_url: str = ""
     product_api_key: str = ""
+    rag_enabled: bool = True
+    external_products: bool = True
 
 
 class AgentUpdate(BaseModel):
@@ -26,21 +30,22 @@ class AgentUpdate(BaseModel):
     product_mode: Optional[ProductMode] = None
     product_api_url: Optional[str] = None
     product_api_key: Optional[str] = None
+    rag_enabled: Optional[bool] = None
+    external_products: Optional[bool] = None
 
 
 class AgentPublic(BaseModel):
-    """Configuração visível do agente (sem api_key)."""
+    """Configuração visível do agente (sem segredos)."""
     id: str
+    tenant_id: str
+    slug: str
     name: str
     system_prompt: str
     business_rules: str
     max_turns: int
     product_mode: ProductMode
     product_api_url: str
-    endpoint: str  # ex.: /v1/agents/minha-loja/chat
+    rag_enabled: bool
+    external_products: bool
+    endpoint: str  # ex.: /v1/tenants/acme/agents/loja/chat
     created_at: str
-
-
-class AgentCreated(AgentPublic):
-    """Retornado apenas na criação — inclui a api_key gerada."""
-    api_key: str

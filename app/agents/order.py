@@ -113,6 +113,8 @@ class OrderAgent(BaseAgent):
         text = (text or "").strip()
         if not text:
             text = ORDER_CONFIRMED if reserved else DEGRADED_CATALOG
+        log.info("order ok: tools=%s tokens=%d reserved=%s",
+                 tools_called, self._tokens_used, reserved)
         return AgentResult(
             response=text,
             should_handoff=reserved,

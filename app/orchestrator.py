@@ -70,6 +70,8 @@ class Orchestrator:
             return result
 
         except Exception as e:  # noqa: BLE001 — qualquer falha degrada em handoff.
+            # O detalhe técnico fica só no log (correlacionado por request/tenant);
+            # a resposta ao usuário usa a mensagem genérica e NÃO vaza str(e).
             log.exception("Erro no orchestrator: %s", e)
             return {
                 "response": ERROR_INTERNAL,
@@ -80,5 +82,4 @@ class Orchestrator:
                 "agent_used": "fallback",
                 "confidence": 0.0,
                 "tokens_used": 0,
-                "error": str(e),
             }

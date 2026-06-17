@@ -109,6 +109,9 @@ def delete_product(agent_id: str, product_id: int) -> bool:
 
 def _fetch_all(agent: AgentConfig) -> list[ProductRow]:
     if agent.product_mode == "external":
+        if not agent.external_products:  # feature flag desligada (ponto 8)
+            log.warning("Catálogo externo desligado por flag (agent=%s).", agent.id)
+            return []
         return _fetch_external(agent)
     if agent.product_mode == "internal":
         return _repo.list_for_agent(agent.id)
