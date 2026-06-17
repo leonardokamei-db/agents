@@ -5,6 +5,11 @@ credencial de consumo/master; usuários autenticam pela própria api_key e o pap
 vem da membership (owner/member).
 """
 
+# Anotações lazy (PEP 563): no Python 3.12 as anotações são avaliadas na definição
+# e `def list(...)` sombra o builtin `list` no namespace da classe, fazendo o
+# `list[dict]` de list_members estourar 'function object is not subscriptable'.
+from __future__ import annotations
+
 import logging
 import secrets
 

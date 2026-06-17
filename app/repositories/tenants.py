@@ -4,6 +4,8 @@ São a base do modelo multi-tenant (ponto 19) e do RBAC (ponto 8): o tenant é
 dono dos agentes, o usuário se vincula ao tenant por uma membership com papel.
 """
 
+from __future__ import annotations  # anotações lazy (3.12): `def list` não quebra list[...]
+
 from app.db import read_connection, transaction
 from app.domain import Membership, Tenant, User
 

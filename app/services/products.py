@@ -5,6 +5,8 @@ cliente). Escrita só faz sentido no modo "internal" — a checagem mora aqui, n
 no router.
 """
 
+from __future__ import annotations  # anotações lazy (3.12): `def list` não quebra list[...]
+
 from app import catalog
 from app.domain import AgentConfig
 from app.errors import NotFoundError, ValidationError
