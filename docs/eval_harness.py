@@ -210,22 +210,26 @@ def test_rag_chat(orch: Orchestrator) -> None:
     out("</details>\n")
 
 
-def test_routing_diagnosis(agent_cfg: dict) -> None:
-    """Prova que as falhas da bateria 2 são de ROTEAMENTO, não de RAG: força as
-    perguntas que falharam direto pelo FAQAgent e mede a acurácia de novo."""
+def test_routing_diagnosis(agent_cfg) -> None:
+    """Mostra que a base de conhecimento RESPONDE as perguntas que o antigo
+    classificador desviava. Força um agente com APENAS a skill knowledge_search
+    (a antiga FAQ) e mede a acurácia. No modelo de skills não há classificador: o
+    LLM escolhe a skill, então esse desvio determinístico deixou de existir."""
     import asyncio
+    from dataclasses import replace
 
-    from app.agents import FAQAgent
+    from app.agents import SkilledAgent
 
-    out("## 4. Diagnóstico de roteamento — as falhas são do classificador, não do RAG\n")
-    out("As perguntas que falharam na bateria 2 foram desviadas por palavras-chave "
-        "(\"custa\", \"demora\", \"cancelar\") para os agentes de pedido/suporte, que "
-        "**não consultam a base de conhecimento**. Aqui forçamos as mesmas perguntas "
-        "pelo FAQAgent (RAG) para mostrar que a informação está recuperável:\n")
+    out("## 4. Diagnóstico de recuperação — a base responde, sem classificador\n")
+    out("No modelo antigo, palavras-chave (\"custa\", \"demora\", \"cancelar\") desviavam "
+        "estas perguntas para os agentes de pedido/suporte, que **não consultavam a "
+        "base de conhecimento**. Aqui forçamos um agente só com a skill "
+        "`knowledge_search` para mostrar que a informação está recuperável — e no "
+        "novo modelo é o LLM que escolhe essa skill:\n")
 
-    faq = FAQAgent(agent_cfg, get_llm())
-    out("| Pergunta | Roteamento real (bateria 2) | Forçado p/ FAQ | Acerto |")
-    out("|----------|------------------------------|----------------|--------|")
+    faq = SkilledAgent(replace(agent_cfg, skills=("knowledge_search",)), get_llm())
+    out("| Pergunta | Desvio no modelo antigo | Fonte (skill) | Acerto |")
+    out("|----------|--------------------------|---------------|--------|")
     misrouted = [
         (CASES[3], "support → resposta inventada"),
         (CASES[4], "order → handoff"),
@@ -236,14 +240,14 @@ def test_routing_diagnosis(agent_cfg: dict) -> None:
     dump = []
     for case, real_route in misrouted:
         r = asyncio.run(faq.execute(case["q"], []))
-        ok = _answer_matches(r["response"], case["must"])
+        ok = _answer_matches(r.response, case["must"])
         fixed += int(ok)
-        out(f"| {case['q'][:38]} | {real_route} | {r['source']} | {'✓' if ok else '✗'} |")
-        dump.append((case["q"], r["response"], ok))
+        out(f"| {case['q'][:38]} | {real_route} | {r.source} | {'✓' if ok else '✗'} |")
+        dump.append((case["q"], r.response, ok))
     out("")
-    out(f"**Recuperação correta ao rotear p/ FAQ: {fixed}/{len(misrouted)} "
-        f"— ou seja, o RAG tinha a resposta; o classificador é o gargalo.**\n")
-    out("<details><summary>Respostas forçadas pelo FAQ</summary>\n")
+    out(f"**Recuperação correta via knowledge_search: {fixed}/{len(misrouted)} "
+        f"— a base tinha a resposta; o gargalo era o classificador, agora removido.**\n")
+    out("<details><summary>Respostas via knowledge_search</summary>\n")
     for q, ans, ok in dump:
         out(f"**P:** {q}  \n**R** {'✓' if ok else '✗'}**:** {ans}\n")
     out("</details>\n")

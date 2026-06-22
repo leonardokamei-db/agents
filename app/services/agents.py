@@ -12,6 +12,7 @@ from app import rag
 from app.domain import AgentConfig
 from app.errors import ConflictError, NotFoundError, ValidationError
 from app.repositories import AgentRepository
+from app.skills import all_skill_names
 from app.textutil import slugify
 
 log = logging.getLogger("blip-agent.services.agents")
@@ -41,6 +42,7 @@ class AgentService:
             raise ConflictError(f"Já existe um agente '{slug}' neste tenant.")
         self._check_external(data.get("product_mode", "none"),
                              data.get("external_products", True))
+        self._check_skills(data.get("skills"))
         agent_id = f"{tenant_id}__{slug}"
         self._repo.insert(agent_id, tenant_id, slug, data)
         log.info("Agente criado: %s (tenant=%s)", agent_id, tenant_id)
@@ -50,6 +52,8 @@ class AgentService:
         mode = changes.get("product_mode", agent.product_mode)
         ext = changes.get("external_products", agent.external_products)
         self._check_external(mode, ext)
+        if "skills" in changes:
+            self._check_skills(changes["skills"])
         self._repo.update(agent.id, changes)
         return self._repo.get_by_id(agent.id)
 
@@ -66,4 +70,17 @@ class AgentService:
             raise ValidationError(
                 "Catálogo externo desabilitado para este agente "
                 "(feature flag external_products=false)."
+            )
+
+    @staticmethod
+    def _check_skills(skills) -> None:
+        """Rejeita skills desconhecidas (nome fora do registry). Vazio/None é
+        válido: o agente deriva as skills das flags em tempo de execução."""
+        if not skills:
+            return
+        valid = set(all_skill_names())
+        unknown = sorted(s for s in skills if s not in valid)
+        if unknown:
+            raise ValidationError(
+                f"Skills desconhecidas: {unknown}. Disponíveis: {sorted(valid)}."
             )

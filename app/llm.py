@@ -53,7 +53,7 @@ class LLMClient:
 
     def complete_with_tools(self, messages: list, tools: list) -> ChatCompletion:
         """Chamada com tool definitions. Retorna o objeto bruto da completion
-        para o chamador inspecionar `tool_calls`. Síncrona — o OrderAgent roda
+        para o chamador inspecionar `tool_calls`. Síncrona — o SkilledAgent roda
         o loop inteiro dentro de `asyncio.to_thread`."""
         try:
             return self.client.chat.completions.create(

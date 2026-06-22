@@ -4,6 +4,8 @@ INVARIANTE DE TENANCY: a resolução do agente é por `(tenant_id, slug)` e as
 listagens são sempre escopadas por tenant. A PK `id` é opaca e global.
 """
 
+import json
+
 from app.db import read_connection, transaction
 from app.domain import AgentConfig
 
@@ -11,13 +13,17 @@ from app.domain import AgentConfig
 _EDITABLE = (
     "name", "system_prompt", "business_rules", "max_turns",
     "product_mode", "product_api_url", "product_api_key",
-    "rag_enabled", "external_products",
+    "rag_enabled", "external_products", "skills",
 )
 _BOOL_FIELDS = ("rag_enabled", "external_products")
 
 
 def _coerce(field: str, value):
-    return int(bool(value)) if field in _BOOL_FIELDS else value
+    if field in _BOOL_FIELDS:
+        return int(bool(value))
+    if field == "skills":  # lista de nomes -> TEXT com lista JSON
+        return json.dumps([str(s) for s in (value or [])])
+    return value
 
 
 class AgentRepository:
@@ -57,14 +63,15 @@ class AgentRepository:
             conn.execute(
                 "INSERT INTO agents (id, tenant_id, slug, name, system_prompt, "
                 "business_rules, max_turns, product_mode, product_api_url, "
-                "product_api_key, rag_enabled, external_products) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "product_api_key, rag_enabled, external_products, skills) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     agent_id, tenant_id, slug, data["name"],
                     data.get("system_prompt", ""), data.get("business_rules", ""),
                     data.get("max_turns", 15), data.get("product_mode", "none"),
                     data.get("product_api_url", ""), data.get("product_api_key", ""),
                     int(data.get("rag_enabled", True)), int(data.get("external_products", True)),
+                    _coerce("skills", data.get("skills")),
                 ),
             )
 

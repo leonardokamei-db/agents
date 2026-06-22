@@ -2,11 +2,15 @@
 tenant (não há api_key por agente). `slug` é o segmento de rota dentro do
 tenant; `id` é a PK opaca global."""
 
-from typing import Optional
+from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
 from app.schemas.shared import ProductMode
+
+# Descrição compartilhada do campo skills (mostrada no OpenAPI).
+_SKILLS_DESC = ("Skills habilitadas (ex.: knowledge_search, check_stock, "
+                "check_catalog, escalate_to_human). Vazio = derivar das flags.")
 
 
 class AgentCreate(BaseModel):
@@ -20,6 +24,7 @@ class AgentCreate(BaseModel):
     product_api_key: str = ""
     rag_enabled: bool = True
     external_products: bool = True
+    skills: List[str] = Field(default_factory=list, description=_SKILLS_DESC)
 
 
 class AgentUpdate(BaseModel):
@@ -32,6 +37,7 @@ class AgentUpdate(BaseModel):
     product_api_key: Optional[str] = None
     rag_enabled: Optional[bool] = None
     external_products: Optional[bool] = None
+    skills: Optional[List[str]] = Field(default=None, description=_SKILLS_DESC)
 
 
 class AgentPublic(BaseModel):
@@ -47,5 +53,6 @@ class AgentPublic(BaseModel):
     product_api_url: str
     rag_enabled: bool
     external_products: bool
+    skills: List[str]
     endpoint: str  # ex.: /v1/tenants/acme/agents/loja/chat
     created_at: str

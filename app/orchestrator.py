@@ -1,27 +1,21 @@
-"""Orchestrator: decide QUAL agente atende cada mensagem.
+"""Orchestrator: prepara o contexto e delega ao agente flexível.
 
-Fluxo por requisição:
-  1. Trunca o histórico para as últimas HISTORY_LIMIT mensagens (economia de
-     tokens no Groq).
-  2. Classifica a intenção (faq / support / order / unclear).
-  3. Escolhe o agente: intenção com confiança alta, senão clarificação;
-     conversa longa demais escala para o fallback.
-  4. Executa e anexa metadados de roteamento.
-Qualquer exceção vira um handoff gracioso.
+Com o modelo de skills, o roteamento por classificador de palavra-chave deixou de
+existir — quem decide QUAL capacidade usar é o LLM, chamando as skills do agente
+(ver app.agents.skilled). O Orchestrator ficou fino e cuida só do transversal:
+
+  1. Trunca o histórico para as últimas HISTORY_LIMIT mensagens (economia de tokens).
+  2. Conversa longa demais (acima de max_turns) -> fallback estático (handoff).
+  3. Senão, executa o SkilledAgent.
+  4. Anexa metadados de roteamento (intent derivado das skills usadas, tokens...).
+  5. Qualquer exceção vira um handoff gracioso (o str(e) fica só no log).
 """
 
 import logging
 from typing import TYPE_CHECKING, List
 
-from app import classifier
-from app.agents import (
-    ClarificationAgent,
-    FallbackAgent,
-    FAQAgent,
-    OrderAgent,
-    SupportAgent,
-)
-from app.config import CONFIDENCE_THRESHOLD, HISTORY_LIMIT
+from app.agents import FallbackAgent, SkilledAgent
+from app.config import HISTORY_LIMIT
 from app.domain import AgentConfig, ChatMessage
 from app.messages import ERROR_INTERNAL
 
@@ -30,43 +24,54 @@ if TYPE_CHECKING:
 
 log = logging.getLogger("blip-agent.orchestrator")
 
+# Skills de catálogo — usado só para derivar um "intent" legível dos metadados.
+_CATALOG_SKILLS = {"check_stock", "search_products", "list_products",
+                   "reserve_stock", "check_catalog"}
+
+
+def _intent_from_result(result: dict) -> str:
+    """Rótulo legível da capacidade usada (para o painel/avaliação). Substitui o
+    intent do antigo classificador — agora é derivado das skills efetivamente
+    chamadas, não de um palpite por palavra-chave."""
+    tools = set(result.get("tools_called") or [])
+    source = result.get("source")
+    if source in ("faq_shortcut", "llm_rag") or "knowledge_search" in tools:
+        return "faq"
+    if source == "support_escalation" or "escalate_to_human" in tools:
+        return "support"
+    if tools & _CATALOG_SKILLS:
+        return "order"
+    return "chat"
+
 
 class Orchestrator:
     def __init__(self, agent_config: AgentConfig, llm: "LLMClient"):
         self.config = agent_config
-        self.agents = {
-            "faq": FAQAgent(agent_config, llm),
-            "support": SupportAgent(agent_config, llm),
-            "order": OrderAgent(agent_config, llm),
-            "clarification": ClarificationAgent(agent_config, llm),
-            "fallback": FallbackAgent(agent_config, llm),
-        }
-
-    def _select_agent(self, intent: str, confidence: float, history: List[ChatMessage]) -> str:
-        """Decide qual agente atende: intenção confiável, senão clarificação;
-        conversa longa demais escala para o fallback."""
-        agent_key = "clarification"
-        if confidence > CONFIDENCE_THRESHOLD and intent in ("faq", "support", "order"):
-            agent_key = intent
-        # O comprimento TOTAL da conversa decide o limite de turnos, mesmo que
-        # só as últimas mensagens vão ao LLM.
-        if len(history) > self.config.max_turns:
-            agent_key = "fallback"
-        return agent_key
+        self.agent = SkilledAgent(agent_config, llm)
+        self.fallback = FallbackAgent(agent_config, llm)
 
     async def process(self, message: str, history: List[ChatMessage]) -> dict:
         try:
             recent_history = history[-HISTORY_LIMIT:]
-            intent, confidence = classifier.classify(message, recent_history)
-            agent_key = self._select_agent(intent, confidence, history)
 
-            agent_result = await self.agents[agent_key].execute(message, recent_history)
+            # O comprimento TOTAL da conversa decide o limite de turnos, mesmo que
+            # só as últimas mensagens vão ao LLM.
+            if len(history) > self.config.max_turns:
+                agent_result = await self.fallback.execute(message, recent_history)
+                agent_used = "fallback"
+            else:
+                agent_result = await self.agent.execute(message, recent_history)
+                agent_used = "skilled"
+
             result = agent_result.to_dict()
-            result.update(intent=intent, confidence=confidence, agent_used=agent_key)
+            # Sem classificador: o "intent" vem das skills usadas e a confiança é
+            # 1.0 (a decisão é do LLM, não mais um score de palavra-chave).
+            result.update(intent=_intent_from_result(result), confidence=1.0,
+                          agent_used=agent_used)
 
-            log.info("intent=%s conf=%.2f agent=%s handoff=%s tokens=%d",
-                     intent, confidence, agent_key,
-                     result["should_handoff"], result["tokens_used"])
+            log.info("agent=%s intent=%s handoff=%s tokens=%d tools=%s",
+                     agent_used, result["intent"], result["should_handoff"],
+                     result["tokens_used"], result.get("tools_called"))
             return result
 
         except Exception as e:  # noqa: BLE001 — qualquer falha degrada em handoff.

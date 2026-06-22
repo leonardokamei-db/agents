@@ -25,7 +25,7 @@ ESCALATION_SUPPORT = (
     "agora mesmo."
 )
 
-# OrderAgent não conseguiu consultar o catálogo.
+# Agente não conseguiu consultar o catálogo (skills de catálogo).
 DEGRADED_CATALOG = (
     "Desculpe, tive um problema ao consultar o catálogo. Você pode reformular "
     "informando o nome do produto e a quantidade? Se preferir, posso transferir "

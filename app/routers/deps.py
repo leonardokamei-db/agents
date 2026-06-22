@@ -89,6 +89,7 @@ def agent_public(agent: AgentConfig) -> dict:
         "product_api_url": agent.product_api_url,
         "rag_enabled": agent.rag_enabled,
         "external_products": agent.external_products,
+        "skills": list(agent.skills),
         "endpoint": f"/v1/tenants/{agent.tenant_id}/agents/{agent.slug}/chat",
         "created_at": str(agent.created_at),
     }

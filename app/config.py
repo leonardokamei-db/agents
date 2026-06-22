@@ -53,6 +53,3 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 # processada por um worker Celery. Sem broker, cai no caminho SÍNCRONO (atual).
 REDIS_URL = os.getenv("REDIS_URL", "")
 CELERY_ENABLED = bool(REDIS_URL)
-
-# --- Roteamento ---------------------------------------------------------------- #
-CONFIDENCE_THRESHOLD = 0.7

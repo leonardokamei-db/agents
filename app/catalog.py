@@ -64,6 +64,36 @@ def check_stock(agent: AgentConfig, product_name: str, quantity: int) -> dict:
     }
 
 
+def catalog_health(agent: AgentConfig) -> dict:
+    """Verifica o catálogo do agente: como está configurado e se está acessível.
+
+    Diferente de list_products (que degrada para lista vazia em falha), aqui a
+    intenção é DIAGNOSTICAR — distinguimos "vazio" de "inacessível" no modo
+    externo, fazendo um probe explícito. Nunca expõe a `product_api_key`.
+    """
+    mode = agent.product_mode
+    if mode == "none":
+        return {"mode": "none", "configured": False,
+                "message": "Catálogo não configurado para este agente."}
+
+    if mode == "internal":
+        count = len(_repo.list_for_agent(agent.id))
+        return {"mode": "internal", "configured": True, "reachable": True,
+                "product_count": count}
+
+    # external
+    if not agent.external_products:
+        return {"mode": "external", "configured": bool(agent.product_api_url),
+                "enabled": False, "reachable": False,
+                "message": "Catálogo externo desligado por feature flag."}
+    if not agent.product_api_url:
+        return {"mode": "external", "configured": False, "enabled": True,
+                "reachable": False, "message": "URL do catálogo externo não configurada."}
+    reachable, count, detail = _probe_external(agent)
+    return {"mode": "external", "configured": True, "enabled": True,
+            "reachable": reachable, "product_count": count, "detail": detail}
+
+
 def reserve_stock(agent: AgentConfig, product_name: str, quantity: int) -> dict:
     """Decrementa estoque (somente modo internal). Externo orienta handoff."""
     if agent.product_mode != "internal":
@@ -140,6 +170,23 @@ def _fetch_external(agent: AgentConfig) -> list[ProductRow]:
         for i, p in enumerate(items)
         if isinstance(p, dict) and p.get("name")
     ]
+
+
+def _probe_external(agent: AgentConfig) -> tuple[bool, int, str]:
+    """GET no catálogo externo para o health check. Retorna
+    (acessível, qtd_produtos, detalhe). Não levanta — devolve o erro como texto."""
+    headers = {}
+    if agent.product_api_key:
+        headers["Authorization"] = f"Bearer {agent.product_api_key}"
+    try:
+        resp = requests.get(agent.product_api_url, headers=headers, timeout=_EXTERNAL_TIMEOUT)
+        resp.raise_for_status()
+        payload = resp.json()
+    except (requests.RequestException, ValueError) as e:
+        return False, 0, f"Falha ao acessar o catálogo externo: {e}"
+    items = payload.get("products", payload) if isinstance(payload, dict) else payload
+    count = len(items) if isinstance(items, list) else 0
+    return True, count, "OK"
 
 
 def _find_product(agent: AgentConfig, product_name: str) -> ProductRow | None:

@@ -37,6 +37,7 @@ def _agents_ddl(table: str = "agents") -> str:
             product_api_key    TEXT NOT NULL DEFAULT '',
             rag_enabled        INTEGER NOT NULL DEFAULT 1,     -- feature flag (ponto 8)
             external_products  INTEGER NOT NULL DEFAULT 1,     -- feature flag (ponto 8)
+            skills             TEXT NOT NULL DEFAULT '[]',     -- lista JSON de skills habilitadas
             created_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE (tenant_id, slug)
         );
@@ -198,6 +199,17 @@ def _migrate_agents_to_multitenant() -> None:
         conn.close()
 
 
+def _ensure_agent_columns() -> None:
+    """Adiciona colunas novas à tabela `agents` que faltam em bancos já
+    multi-tenant porém anteriores a elas (CREATE TABLE IF NOT EXISTS não altera
+    tabela existente). Idempotente. Hoje: `skills` (agentes flexíveis)."""
+    with transaction() as conn:
+        cols = _columns(conn, "agents")
+        if cols and "skills" not in cols:
+            conn.execute("ALTER TABLE agents ADD COLUMN skills TEXT NOT NULL DEFAULT '[]'")
+            log.warning("Coluna agents.skills adicionada (migração para agentes flexíveis).")
+
+
 def init_db() -> None:
     """Cria o schema se não existir e migra bancos legados (idempotente)."""
     conn = connect()
@@ -207,3 +219,4 @@ def init_db() -> None:
     finally:
         conn.close()
     _migrate_agents_to_multitenant()
+    _ensure_agent_columns()

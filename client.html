@@ -162,6 +162,9 @@
           <div class="check"><input type="checkbox" id="c_rag" checked><label>RAG habilitado</label></div>
           <div class="check"><input type="checkbox" id="c_ext" checked><label>Catálogo externo permitido</label></div>
         </div>
+        <label>Skills (separadas por vírgula; vazio = derivar das flags)</label>
+        <input id="c_skills" placeholder="knowledge_search, check_stock, check_catalog, escalate_to_human">
+        <p class="hint">Disponíveis: knowledge_search · check_stock · search_products · list_products · reserve_stock · check_catalog · escalate_to_human</p>
         <button class="btn" id="createAgentBtn">Criar agente</button>
       </div>
     </div>
@@ -203,6 +206,9 @@
           <div class="check"><input type="checkbox" id="e_rag"><label>RAG habilitado</label></div>
           <div class="check"><input type="checkbox" id="e_ext"><label>Catálogo externo permitido</label></div>
         </div>
+        <label>Skills (separadas por vírgula; vazio = derivar das flags)</label>
+        <input id="e_skills" placeholder="knowledge_search, check_stock, ...">
+        <p class="hint">Disponíveis: knowledge_search · check_stock · search_products · list_products · reserve_stock · check_catalog · escalate_to_human</p>
         <button class="btn" id="saveConfigBtn">Salvar e sincronizar</button>
         <button class="btn danger" id="deleteAgentBtn">Excluir agente</button>
       </div>
@@ -411,6 +417,11 @@ $('newAgentBtn').onclick = () => {
   showTab('createAgentTab');
 };
 
+// Skills no painel: campo de texto separado por vírgula -> lista (vazio = derivar das flags).
+function parseSkills(str) {
+  return (str || '').split(',').map(s => s.trim()).filter(Boolean);
+}
+
 $('createAgentBtn').onclick = async () => {
   try {
     const created = await api(`/v1/tenants/${tid()}/agents`, { method: 'POST', body: JSON.stringify({
@@ -424,6 +435,7 @@ $('createAgentBtn').onclick = async () => {
       product_api_key: $('c_pkey').value.trim(),
       rag_enabled: $('c_rag').checked,
       external_products: $('c_ext').checked,
+      skills: parseSkills($('c_skills').value),
     })});
     await loadAgents();
     toast('Agente criado: ' + created.slug);
@@ -501,6 +513,7 @@ function fillConfig() {
   $('e_pkey').value = '';
   $('e_rag').checked = !!a.rag_enabled;
   $('e_ext').checked = !!a.external_products;
+  $('e_skills').value = (a.skills || []).join(', ');
 }
 
 $('saveConfigBtn').onclick = async () => {
@@ -514,6 +527,7 @@ $('saveConfigBtn').onclick = async () => {
       product_api_url: $('e_purl').value.trim(),
       rag_enabled: $('e_rag').checked,
       external_products: $('e_ext').checked,
+      skills: parseSkills($('e_skills').value),
     };
     if ($('e_pkey').value.trim()) body.product_api_key = $('e_pkey').value.trim();
     await api(`${agentBase()}/config`, { method: 'PUT', body: JSON.stringify(body) });

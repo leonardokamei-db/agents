@@ -1,13 +1,20 @@
 """Construção de system prompts compactos.
 
-Filosofia: o prompt base tem ~2 frases e cada modo adiciona 1-3 frases. As
-regras de negócio do cliente entram uma única vez. Menos texto fixo == menos
-tokens de entrada em TODA chamada ao Groq.
+Filosofia: o prompt base tem ~2 frases e o agente flexível adiciona só as regras
+das famílias de skill que estão habilitadas. As regras de negócio do cliente
+entram uma única vez. Menos texto fixo == menos tokens de entrada em TODA
+chamada ao Groq.
 """
+
+from __future__ import annotations
 
 from app.domain import AgentConfig
 
 HANDOFF_TOKEN = "[HANDOFF]"
+
+# Skills de catálogo — usado só para decidir QUAIS regras de prompt incluir.
+_CATALOG_SKILLS = {"check_stock", "search_products", "list_products",
+                   "reserve_stock", "check_catalog"}
 
 
 def base_prompt(agent: AgentConfig) -> str:
@@ -24,42 +31,27 @@ def base_prompt(agent: AgentConfig) -> str:
     return prompt
 
 
-def faq_prompt(agent: AgentConfig, chunks: list[dict]) -> str:
-    """Prompt RAG: trechos recuperados + instrução de aterramento."""
-    if chunks:
-        context = "\n\n".join(
-            f"[{c['source_name']}] {c['content']}" for c in chunks
+def skilled_prompt(agent: AgentConfig, skill_names: list[str]) -> str:
+    """Prompt do agente flexível: prompt base + instruções compactas de uso das
+    skills. Cada regra só entra se a skill correspondente estiver habilitada —
+    assim um agente sem catálogo não paga os tokens da regra de catálogo."""
+    has = set(skill_names)
+    rules: list[str] = []
+    if has & _CATALOG_SKILLS:
+        rules.append("para catálogo, estoque e preços consulte SEMPRE pelas "
+                     "ferramentas — nunca invente dados")
+    if "reserve_stock" in has:
+        rules.append("use reserve_stock só após confirmação explícita de compra")
+    if "knowledge_search" in has:
+        rules.append("para dúvidas sobre informações/políticas do negócio, use "
+                     "knowledge_search")
+    if "escalate_to_human" in has:
+        rules.append("se precisar de uma pessoa, use escalate_to_human")
+
+    parts = [base_prompt(agent)]
+    if rules:
+        parts.append(
+            "Você tem ferramentas para obter dados reais: " + "; ".join(rules) + ". "
+            "Uma ferramenta por vez; com os dados em mãos, responda em texto."
         )
-    else:
-        context = "(sem informações sobre o assunto)"
-    return (
-        f"{base_prompt(agent)}\n\n"
-        f"Base de conhecimento:\n{context}\n\n"
-        f"Responda APENAS com base nos trechos acima, usando só a parte relevante. "
-        f"Se a resposta não estiver neles, comece com {HANDOFF_TOKEN}."
-    )
-
-
-def support_prompt(agent: AgentConfig) -> str:
-    return (
-        f"{base_prompt(agent)}\n"
-        f"Modo suporte: reconheça o problema com empatia e resolva. Se exigir um "
-        f"humano (reembolso, cancelamento, reclamação formal), comece com {HANDOFF_TOKEN}."
-    )
-
-
-def clarification_prompt(agent: AgentConfig) -> str:
-    return (
-        f"{base_prompt(agent)}\n"
-        f"A intenção do cliente está ambígua. Não responda ainda: faça UMA única "
-        f"pergunta curta de esclarecimento."
-    )
-
-
-def order_prompt(agent: AgentConfig) -> str:
-    return (
-        f"{base_prompt(agent)}\n"
-        f"Modo pedidos: consulte catálogo, estoque e preços SEMPRE pelas ferramentas — "
-        f"nunca invente dados. Uma ferramenta por vez; com os dados em mãos, responda "
-        f"em texto. Use reserve_stock somente após confirmação explícita de compra."
-    )
+    return "\n".join(parts)

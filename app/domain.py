@@ -18,6 +18,7 @@ Notas de design:
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from dataclasses import asdict, dataclass, field
 from typing import Any, Literal, Mapping, Optional, TypedDict
@@ -105,6 +106,20 @@ class Principal:
         return self.role in ("admin", "owner")
 
 
+def _parse_skills(row: Mapping[str, Any]) -> tuple[str, ...]:
+    """Lê a coluna `skills` (TEXT com lista JSON) como tupla. Tolerante: coluna
+    ausente (banco pré-migração) ou JSON inválido viram tupla vazia — o agente
+    então deriva as skills das flags (ver app.skills.enabled_skills_for)."""
+    raw = row["skills"] if "skills" in row.keys() else None
+    if not raw:
+        return ()
+    try:
+        data = json.loads(raw)
+    except (TypeError, ValueError):
+        return ()
+    return tuple(str(s) for s in data) if isinstance(data, list) else ()
+
+
 @dataclass(frozen=True)
 class AgentConfig:
     """Configuração de um agente, tipada. Espelha a tabela `agents`.
@@ -112,6 +127,12 @@ class AgentConfig:
     `id` é a PK opaca e globalmente única (novos agentes nascem `{tenant}__{slug}`,
     o que resolve colisão de slug entre tenants — ponto 19). O caminho da API usa
     o `slug` dentro do tenant. Sem `api_key`: a credencial vive no tenant.
+
+    `skills` é o conjunto de capacidades habilitadas (ex.: "knowledge_search",
+    "check_stock"). É uma TUPLA porque AgentConfig é `frozen` e serve de chave
+    do `lru_cache` do Orchestrator — listas não são hasháveis. Vazio == derivar
+    das flags (rag_enabled/product_mode), mantendo os agentes antigos
+    funcionando (ver app.skills.enabled_skills_for).
     """
     id: str
     tenant_id: str
@@ -125,6 +146,7 @@ class AgentConfig:
     product_api_key: str = ""
     rag_enabled: bool = True
     external_products: bool = True
+    skills: tuple[str, ...] = ()
     created_at: str = ""
 
     @classmethod
@@ -142,6 +164,7 @@ class AgentConfig:
             product_api_key=row["product_api_key"] or "",
             rag_enabled=bool(row["rag_enabled"]),
             external_products=bool(row["external_products"]),
+            skills=_parse_skills(row),
             created_at=str(row["created_at"]) if row["created_at"] is not None else "",
         )
 
@@ -188,8 +211,8 @@ class ProductRow:
 class AgentResult:
     """Saída padronizada de qualquer agente (antes era um dict solto).
 
-    Campos opcionais cobrem fluxos específicos (RAG no FAQAgent, tools no
-    OrderAgent) com defaults, então toda subclasse satisfaz o contrato mínimo.
+    Campos opcionais cobrem fluxos específicos (RAG e tools/skills no
+    SkilledAgent) com defaults, então toda subclasse satisfaz o contrato mínimo.
     """
     response: str
     should_handoff: bool = False
