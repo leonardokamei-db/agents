@@ -365,8 +365,8 @@ classificador); reexecute o harness para revalidar sob o modelo de skills.
 ## 10. Resultados de avaliação
 
 Medidos com o FAQ real da Loja Demo (6 páginas, 10 chunks). Reproduzível via
-`docs/eval_harness.py`; log completo em [`eval_log.md`](eval_log.md). Os números
-abaixo são do run registrado — reexecute para revalidar.
+`docs/eval_harness.py`, que **reescreve** `docs/eval_log.md` ao rodar (o log não é
+versionado). Os números abaixo são do run histórico — reexecute para revalidar.
 
 **Embeddings (Jina):**
 - Dimensão 384, vetores L2-normalizados (norma média 1.0000) — OK.
@@ -438,7 +438,8 @@ pergunta inteira em contexto, então o desvio por palavra-chave deixou de existi
    capacidade. **Decisão consciente de adiar:** mantém-se tudo em código no
    protótipo; migrar exige definir empacotamento, latência (cold start), auth de
    invocação e observabilidade distribuída. Migrar uma skill não mexe no registry
-   nem no agente — só no transporte.
+   nem no agente — só no transporte. **Desenho detalhado** (decisão por decisão,
+   contrato de fio, segurança, passos de implementação): [`SKILLS_REMOTAS.md`](SKILLS_REMOTAS.md).
 
 ---
 
