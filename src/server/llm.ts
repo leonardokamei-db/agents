@@ -8,7 +8,6 @@
 import Groq from "groq-sdk";
 
 import * as config from "./config";
-import type { ChatMessage } from "./domain";
 import { getLogger } from "./logging";
 
 const log = getLogger("blip-agent.llm");
@@ -44,12 +43,12 @@ export class LLMClient {
   }
 
   /** Chat completion sem ferramentas. Retorna [texto, tokens]. */
-  async complete(messages: ChatMessage[]): Promise<[string, number]> {
+  async complete(messages: ChatMessageParam[]): Promise<[string, number]> {
     let resp: ChatCompletion;
     try {
       resp = await this.client.chat.completions.create({
         model: this.model,
-        messages: messages as ChatMessageParam[],
+        messages,
         max_tokens: config.LLM_MAX_TOKENS,
         temperature: config.LLM_TEMPERATURE,
       });
