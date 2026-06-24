@@ -9,7 +9,7 @@
 import { randomUUID } from "node:crypto";
 
 import { NextResponse, type NextRequest } from "next/server";
-import { ZodError, type ZodType } from "zod";
+import { z, ZodError } from "zod";
 
 import { AppError } from "../errors";
 import { getLogger, runWithLogContext, tenantFromPath } from "../logging";
@@ -50,15 +50,20 @@ function errorResponse(e: unknown): NextResponse {
   return NextResponse.json({ code: "internal_error", detail: "Erro interno." }, { status: 500 });
 }
 
-/** Lê e valida o corpo JSON com um schema Zod (lança ZodError -> 400). */
-export async function parseBody<T>(req: NextRequest, schema: ZodType<T>): Promise<T> {
+/**
+ * Lê e valida o corpo JSON com um schema Zod (lança ZodError -> 400).
+ * Genérico sobre o schema (não sobre T) para inferir o tipo de SAÍDA (defaults
+ * aplicados) — senão `T` vincularia ao input e campos com `.default()` ficariam
+ * opcionais (`... | undefined`) no resultado.
+ */
+export async function parseBody<S extends z.ZodTypeAny>(req: NextRequest, schema: S): Promise<z.output<S>> {
   let raw: unknown;
   try {
     raw = await req.json();
   } catch {
     raw = {};
   }
-  return schema.parse(raw);
+  return schema.parse(raw) as z.output<S>;
 }
 
 /** Resposta JSON com status (default 200). */

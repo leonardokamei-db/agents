@@ -21,6 +21,23 @@ const globalForDb = globalThis as unknown as { _blipSql?: Sql };
 let _sql: Sql | null = null;
 let _db: Db | null = null;
 
+/**
+ * SSL: obrigatório em provedores gerenciados (Supabase/Neon); desligado em local
+ * (Docker) e na rede interna do Railway. `?sslmode=disable` na URL também desliga.
+ */
+function sslFor(url: string): "require" | false {
+  if (/[?&]sslmode=disable/i.test(url)) return false;
+  try {
+    const host = new URL(url).hostname;
+    if (host === "localhost" || host === "127.0.0.1" || host.endsWith(".railway.internal")) {
+      return false;
+    }
+  } catch {
+    /* URL não parseável (senha com caracteres especiais): assume remoto -> SSL */
+  }
+  return "require";
+}
+
 function init(): Db {
   if (_db) return _db;
   if (!DATABASE_URL) {
@@ -28,7 +45,11 @@ function init(): Db {
       "DATABASE_URL não configurada — defina a URL do Postgres (com pgvector).",
     );
   }
-  _sql = globalForDb._blipSql ?? postgres(DATABASE_URL, { max: 10 });
+  // prepare:false -> compatível com poolers (Supabase Supavisor / pgbouncer) em
+  // qualquer modo (session ou transaction). max:10 conexões por instância.
+  _sql =
+    globalForDb._blipSql ??
+    postgres(DATABASE_URL, { max: 10, prepare: false, ssl: sslFor(DATABASE_URL) });
   if (process.env.NODE_ENV !== "production") globalForDb._blipSql = _sql;
   _db = drizzle(_sql, { schema });
   return _db;

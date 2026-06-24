@@ -128,11 +128,19 @@ URLs e contratos **idênticos** ao backend anterior. Endpoints de agente sob
 > Sem `JINA_API_KEY` o servidor sobe, mas o RAG degrada: a busca retorna vazio e a
 > ingestão responde 503 com mensagem clara.
 
-## Deploy (Railway)
-1. Provisione um **Postgres com pgvector** (imagem `pgvector/pgvector` ou plugin
-   Postgres do Railway ≥ 16) e exponha `DATABASE_URL` ao serviço.
-2. Defina `GROQ_API_KEY`, `JINA_API_KEY`, `ADMIN_API_KEY` em Variables.
-3. O deploy roda `npm run db:setup` (extensão + schema + seed, idempotente) e sobe
-   o `next start` — ver `railway.toml`. Healthcheck em `/health`.
+## Deploy (Railway + Supabase)
 
-Não há mais Volume nem SQLite: todo o estado vive no Postgres.
+Banco no **Supabase** (Postgres + pgvector); app no **Railway**.
+
+1. **Supabase:** crie o projeto, habilite a extensão `vector` e rode
+   `supabase/schema.sql` no SQL Editor (cria as tabelas). Opcional: `supabase/seed.sql`.
+2. **Conexão:** copie a string do **Pooler** do Supabase (host `*.pooler.supabase.com`,
+   IPv4) — a conexão direta (`db.<ref>.supabase.co`) é IPv6 e o Railway não alcança.
+3. **Railway:** defina `DATABASE_URL` (pooler), `GROQ_API_KEY`, `JINA_API_KEY`,
+   `ADMIN_API_KEY` em Variables. O deploy roda `npm run db:seed` (semeia tenant
+   default + demo, idempotente) e sobe o `next start` — ver `railway.toml`.
+   Healthcheck em `/health`.
+
+O cliente do banco já usa SSL e `prepare:false` (compatível com o pooler). Para um
+Postgres self-managed com a extensão disponível, troque o start para `db:setup`
+(a app cria o schema sozinha). Não há Volume nem SQLite: o estado vive no Postgres.

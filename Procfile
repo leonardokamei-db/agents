@@ -1,1 +1,2 @@
-web: npm run db:setup && npm run start
+web: npm run db:seed && npm run start
+

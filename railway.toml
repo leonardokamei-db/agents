@@ -4,13 +4,16 @@ builder = "NIXPACKS"
 buildCommand = "npm install --include=dev && npm run build"
 
 [deploy]
-# Aplica a extensão pgvector + schema + seed (idempotente) e sobe o Next.
-startCommand = "npm run db:setup && npm run start"
+# O schema é criado no Supabase via supabase/schema.sql; aqui só semeamos o tenant
+# default + agente demo (idempotente) e subimos o Next.
+startCommand = "npm run db:seed && npm run start"
 healthcheckPath = "/health"
 healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3
 
-# Banco: provisione um Postgres (com a extensão pgvector — imagem pgvector/pgvector
-# ou plugin Postgres do Railway >= 16) e exponha DATABASE_URL ao serviço.
-# Não há mais Volume nem SQLite: o estado vive no Postgres.
+# Banco: Supabase (Postgres + pgvector). Rode supabase/schema.sql no SQL Editor e
+# defina DATABASE_URL com a string do POOLER do Supabase (IPv4; o Railway não tem
+# IPv6 para a conexão direta). Não há Volume nem SQLite: o estado vive no Postgres.
+# (Para um Postgres self-managed com a extensão disponível, troque o start por
+#  "npm run db:setup && npm run start" para criar o schema pela própria app.)
