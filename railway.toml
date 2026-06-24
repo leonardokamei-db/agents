@@ -1,15 +1,16 @@
 [build]
 builder = "NIXPACKS"
+# Força a instalação das devDependencies (typescript/eslint) para o `next build`.
+buildCommand = "npm install --include=dev && npm run build"
 
 [deploy]
-startCommand = "uvicorn server:app --host 0.0.0.0 --port $PORT"
+# Aplica a extensão pgvector + schema + seed (idempotente) e sobe o Next.
+startCommand = "npm run db:setup && npm run start"
 healthcheckPath = "/health"
-# First boot downloads the embedding model (~80MB) + torch, so give it room.
 healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3
 
-# Persistência dos bancos SQLite (products.db, rag.db):
-#   1. Crie um Volume no serviço (Settings -> Volumes) com mount path /app/data
-#   2. Defina a variável de ambiente DB_DIR = /app/data
-# Sem isso, os bancos sao recriados/repopulados a cada deploy (efemero).
+# Banco: provisione um Postgres (com a extensão pgvector — imagem pgvector/pgvector
+# ou plugin Postgres do Railway >= 16) e exponha DATABASE_URL ao serviço.
+# Não há mais Volume nem SQLite: o estado vive no Postgres.

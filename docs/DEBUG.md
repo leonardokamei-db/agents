@@ -11,13 +11,13 @@ Todo log sai no formato:
 ```
 
 - `req=<id>` — correlaciona todas as linhas de **uma requisição**. O id vem do
-  header `X-Request-ID` (se o cliente enviar) ou é gerado pelo middleware. Ele
+  header `X-Request-ID` (se o cliente enviar) ou é gerado pelo wrapper de rota. Ele
   também volta no header `X-Request-ID` da resposta — para casar log ↔ chamada.
 - `tenant=<id>` — extraído do path `/v1/tenants/{tenant_id}/...`.
-- Fora de uma requisição (boot, worker), ambos saem como `-`.
+- Fora de uma requisição (boot, scripts), ambos saem como `-`.
 
-Implementação: contextvars + filtro de logging em [app/logging_ctx.py](../app/logging_ctx.py),
-preenchidos pelo middleware em [app/main.py](../app/main.py).
+Implementação: `AsyncLocalStorage` em [src/server/logging.ts](../src/server/logging.ts),
+aberto pelo wrapper em [src/server/http/route.ts](../src/server/http/route.ts).
 
 ### Nível de log
 
@@ -32,13 +32,13 @@ LOG_LEVEL=WARNING # só avisos/erros
 
 | Logger | O que loga |
 |--------|-----------|
-| `blip-agent.orchestrator` | intent, confiança, agente escolhido, handoff, tokens |
-| `blip-agent.classifier` | scores por intenção e mensagem (truncada) |
-| `blip-agent.faq` | atalho RAG vs RAG+LLM, distância do melhor chunk |
-| `blip-agent.order` | caminho feliz: tools chamadas, tokens, se reservou |
+| `blip-agent.orchestrator` | intent derivado das skills, handoff, tokens, tools |
+| `blip-agent.skilled` | fast-paths (escalonamento/atalho RAG), loop de tools, retries |
+| `blip-agent.rag` | ingestão (nº de chunks), atalhos de busca |
+| `blip-agent.catalog` | reserva de estoque, falhas da API externa |
+| `blip-agent.llm` | erros do Groq, `tool_use_failed` |
 | `blip-agent.services.*` | criação de tenant/agente/membership |
-| `blip-agent.db` | migração multi-tenant e criação do tenant default |
-| `blip-agent.tasks` | enfileiramento Celery / fallback síncrono |
+| `blip-agent.bootstrap` | criação do tenant default + seed do agente demo |
 
 > Erros tratados **não vazam** detalhe técnico ao usuário: o chat degrada com uma
 > mensagem genérica (`ERROR_INTERNAL`) e o `str(e)` fica **só no log** (com o
@@ -54,7 +54,7 @@ Todo erro de domínio sai padronizado pelo handler único:
 
 `code` ∈ `not_found` (404), `conflict` (409), `validation_error` (400),
 `unauthorized` (401), `forbidden` (403), `embedding_unavailable` (503),
-`internal_error` (500). Definições em [app/errors.py](../app/errors.py).
+`internal_error` (500). Definições em [src/server/errors.ts](../src/server/errors.ts).
 
 ## Autenticação (RBAC — ponto 8)
 
@@ -72,40 +72,33 @@ Diagnóstico rápido:
 - **403** → chave válida mas sem permissão (tenant errado, ou `member` tentando gerir).
 - **404** → agente não existe **naquele tenant** (isolamento ok).
 
-## Workers / fila de ingestão (ponto 7)
+## Ingestão de conhecimento
 
-Por padrão **não há broker** → a ingestão de PDF/texto roda **síncrona** no
-processo web (resposta 200 com `chunks_created`). Comportamento idêntico ao atual.
+A ingestão de PDF/texto (extração + embeddings + escrita) roda **síncrona** no
+request e responde **200** com `chunks_created`. Celery e Redis foram **removidos**
+na migração para TS. Para fila assíncrona sem Redis no futuro (ex.: pg-boss sobre o
+mesmo Postgres), o ponto de extensão é `src/server/services/knowledge.ts`.
 
-Para descarregar a ingestão (deploy fora do Railway):
+PDFs são extraídos com `unpdf` (puro JS) em `src/server/rag.ts`.
+
+## Banco
+
+Tudo num único **Postgres + pgvector**:
+- relacional — tenants, users, memberships, agents, products;
+- vetorial — `chunks` com coluna `embedding vector(384)`, escopada por `agent_id`.
+
+O schema é criado no boot/deploy por `npm run db:setup` (`CREATE EXTENSION vector` +
+DDL idempotente em `src/server/db/ddl.ts`). **Greenfield:** não há migração de
+bancos legados. Para inspecionar:
 
 ```bash
-pip install "celery[redis]"
-export REDIS_URL=redis://localhost:6379/0   # liga o modo fila
-
-# processo web (uvicorn) normalmente, e em paralelo:
-celery -A app.tasks.celery_app worker --loglevel=INFO
+psql "$DATABASE_URL" -c "\dt"
+psql "$DATABASE_URL" -c "select agent_id, count(*) from chunks group by 1;"
 ```
-
-Com `REDIS_URL` setado, `POST .../knowledge/pdf|text` responde **202** com
-`{"status":"queued","task_id":...}` e o worker processa em background. Sem broker,
-o código cai no caminho síncrono automaticamente — ver [app/tasks.py](../app/tasks.py).
-
-## Bancos e migração
-
-- `core.db` — tenants, users, memberships, agents, products.
-- `rag.db` — chunks + embeddings (sqlite-vec), escopados por `agent_id`.
-- Aponte `DB_DIR` para um volume persistente em produção.
-
-A migração roda **sozinha no boot** (`init_db`/`init_rag_db`, idempotentes):
-um `core.db` legado (agente com `api_key`, sem tenant) é reconstruído no modelo
-multi-tenant — agentes vão para o tenant `default` (cuja `api_key` é logada uma
-vez), preservando ids/produtos/RAG. No `rag.db`, a coluna `tenant_id` é renomeada
-para `agent_id`.
 
 ## Checagem rápida de saúde
 
 ```bash
-curl -s localhost:8000/health
-# {"status":"ok","model":"...","celery":false,"tenants":["default"]}
+curl -s localhost:3000/health
+# {"status":"ok","model":"...","tenants":["default"]}
 ```

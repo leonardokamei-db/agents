@@ -10,14 +10,14 @@ cada bot.
 Usuários se vinculam a um tenant por uma **membership** com papel (`owner`/
 `member`) — RBAC mínimo. A credencial de consumo vive no nível do **tenant**.
 
-- **Stack:** FastAPI (Python 3.12) · Groq (LLM) · Jina (embeddings) · SQLite + sqlite-vec (dados e vetores) · Celery+Redis opcional (fila de ingestão)
-- **Deploy:** Railway (NIXPACKS), `uvicorn server:app` — `server.py` apenas reexporta `app.main:app`; bancos SQLite em volume persistente (`DB_DIR`)
-- **Front-end:** `client.html` — painel admin estático servido pela própria API em `/` (usa a `ADMIN_API_KEY` como superusuário)
-- **Camadas:** routers (HTTP) → services (regra de negócio) → repositories (SQL) → domínio tipado
+- **Stack:** Next.js 15 (App Router) · TypeScript · Groq (LLM) · Jina (embeddings) · **Postgres + pgvector** (dados e vetores no mesmo engine) · Drizzle ORM
+- **Deploy:** Railway (NIXPACKS), `next build` / `next start`; estado no Postgres (sem SQLite, sem Volume). No deploy roda `npm run db:setup` (extensão pgvector + schema + seed, idempotente)
+- **Front-end:** painel admin React (`src/app/page.tsx`) servido pela própria app em `/` (usa a `ADMIN_API_KEY` como superusuário)
+- **Camadas:** rotas (HTTP) → services (regra de negócio) → repositories (Drizzle) → domínio tipado
+- **Ingestão:** **síncrona** no request (Celery/Redis removidos na migração para TS)
 
-> O `README.md` na raiz ainda descreve a arquitetura **antiga** (rotas `/v1/agents`,
-> `schemas.py`/`tenants.py`/`routers/admin.py` — arquivos já removidos). Em caso de
-> divergência, **este documento e o código são a fonte de verdade.**
+> Migrado de FastAPI/Python para Next.js/TypeScript preservando URLs e contratos da
+> API. **Este documento e o código são a fonte de verdade.**
 
 ---
 
@@ -64,26 +64,25 @@ Usuários se vinculam a um tenant por uma **membership** com papel (`owner`/
                                                 └──────────┘
 ```
 
-Mapa de arquivos (a ordem de camadas está documentada em `app/__init__.py`):
+Mapa de arquivos:
 
 | Camada | Arquivo | Responsabilidade |
 |---|---|---|
-| Config | `app/config.py` | Env vars e constantes (HISTORY_LIMIT, RAG_TOP_K, modelos, paths, LOG_LEVEL, REDIS_URL) |
-| API | `app/main.py`, `app/routers/*` | Endpoints, RBAC, CORS, middleware de contexto, handlers de erro, `/health`, ciclo de vida |
-| Domínio | `app/domain.py` | Tipos tipados (Tenant, User, Membership, Principal, AgentConfig, ProductRow, AgentResult, ChatMessage) |
-| Schemas | `app/schemas/*` | Modelos Pydantic por domínio (agent/chat/product/knowledge/tenant/shared) |
-| Services | `app/services/*` | Regra de negócio (Agent/Tenant/Product/Knowledge), injetada via `Depends` |
-| Dados | `app/repositories/*`, `app/db.py` | Todo o SQL + schema + migração multi-tenant |
-| Erros / Copy | `app/errors.py`, `app/messages.py` | Hierarquia única de `AppError`; copy pt-BR voltada ao usuário (handoff, escalonamento, degradação) |
-| Orquestração | `app/orchestrator.py` | Trunca histórico, aplica limite de turnos (→ fallback) e delega ao agente flexível |
-| Agentes | `app/agents/*` | Agente flexível (`SkilledAgent`, dirigido por skills) + fallback estático |
-| Skills | `app/skills/*` | Capacidades discretas que o agente invoca via function calling (knowledge_search, catálogo, check_catalog, escalate_to_human); interface pronta para virar Lambda |
-| Prompts | `app/prompts.py` | System prompts compactos (base + regras só das skills habilitadas) |
-| RAG | `app/rag.py`, `app/embeddings.py` | Chunking, ingestão, busca vetorial, embeddings |
-| Catálogo | `app/catalog.py` | Produtos (SQLite interno OU API externa) + health check do catálogo |
-| Workers | `app/tasks.py` | Ingestão via Celery+Redis (202) com fallback síncrono |
-| Observabilidade | `app/logging_ctx.py` | Correlação de log por `request_id` + `tenant` (contextvars + filtro) |
-| Texto | `app/textutil.py` | Normalização/tokenização (`normalize`, `word_set`, `slugify`) |
+| Config | `src/server/config.ts` | Env vars e constantes (HISTORY_LIMIT, RAG_TOP_K, modelos, DATABASE_URL, LOG_LEVEL) |
+| API | `src/app/v1/**/route.ts`, `src/server/http/*` | Endpoints, RBAC (`auth.ts`), wrapper (`route.ts`: log+erros+X-Request-ID), serializadores, `/health` |
+| Domínio | `src/server/domain.ts` | Tipos (Tenant, User, Membership, Principal, AgentConfig, ProductRow, AgentResult, ChatMessage) |
+| Schemas | `src/server/schemas.ts` | Validação Zod por domínio + mapeadores wire→DTO |
+| Services | `src/server/services/*` | Regra de negócio (Agent/Tenant/Product/Knowledge) |
+| Dados | `src/server/repositories/*`, `src/server/db/*` | Acesso via Drizzle + schema/DDL + bootstrap (seed) |
+| Erros / Copy | `src/server/errors.ts`, `messages.ts` | Hierarquia única de `AppError`; copy pt-BR voltada ao usuário |
+| Orquestração | `src/server/orchestrator.ts` | Trunca histórico, aplica limite de turnos (→ fallback) e delega ao agente flexível |
+| Agentes | `src/server/agents/*` | Agente flexível (`SkilledAgent`, dirigido por skills) + fallback estático |
+| Skills | `src/server/skills/*` | Capacidades discretas invocadas via function calling; interface pronta para virar Lambda |
+| Prompts | `src/server/prompts.ts` | System prompts compactos (base + regras só das skills habilitadas) |
+| RAG | `src/server/rag.ts`, `embeddings.ts` | Chunking, ingestão, busca vetorial (pgvector), embeddings |
+| Catálogo | `src/server/catalog.ts` | Produtos (Postgres interno OU API externa) + health check do catálogo |
+| Observabilidade | `src/server/logging.ts` | Correlação de log por `requestId` + `tenant` (AsyncLocalStorage) |
+| Texto | `src/server/textutil.ts` | Normalização/tokenização (`normalize`, `wordSet`, `slugify`) |
 
 ---
 
@@ -267,7 +266,9 @@ estoque. A skill **`check_catalog`** é nova: diagnostica o catálogo do cliente
 
 ## 6. Modelo de dados
 
-`core.db` (relacional; conexão WAL, `foreign_keys = ON`):
+Tudo num único **Postgres** (antes eram `core.db` relacional e `rag.db` vetorial).
+
+Relacional:
 
 ```
 tenants(id PK, name, api_key UNIQUE, created_at)
@@ -280,23 +281,20 @@ agents(id PK = {tenant}__{slug}, tenant_id FK→tenants, slug, name, system_prom
 products(id PK, agent_id FK→agents, name, description, price, stock, unit)
 ```
 
-`rag.db` (vetorial, sqlite-vec):
+Vetorial (pgvector, mesma instância):
 
 ```
-chunks(id PK, agent_id, source_name, chunk_index, content, created_at)
-chunk_embeddings(chunk_id PK, embedding FLOAT[384])   -- tabela virtual vec0
+chunks(id PK, agent_id, source_name, chunk_index, content, embedding vector(384), created_at)
 ```
 
-> A credencial subiu para o tenant: `agents` **não tem mais `api_key`**.
-> `rag_enabled` e `external_products` são **feature flags** por agente (ponto 8);
-> `skills` é a lista de capacidades habilitadas (vazia → derivada das flags). A
-> coluna `skills` é adicionada no boot via `ALTER TABLE ... ADD COLUMN` idempotente
-> (`_ensure_agent_columns`), então bancos anteriores ganham a coluna sem perder dados.
-> Bancos legados são migrados no boot, de forma idempotente: `core.db` antigo
-> (agente com `api_key`, sem tenant) é reconstruído no modelo multi-tenant
-> (agentes vão para o tenant `default`, `api_key` por agente descartada,
-> produtos/RAG preservados); em `rag.db`, `chunks.tenant_id` → `agent_id`.
-> Ver `app/db.py` (`_migrate_agents_to_multitenant`) e `docs/DEBUG.md`.
+> A credencial vive no tenant: `agents` **não tem `api_key`**. `rag_enabled` e
+> `external_products` são **feature flags** por agente; `skills` é a lista de
+> capacidades habilitadas (vazia → derivada das flags). A busca KNN filtra por
+> `agent_id` no `WHERE` (operador `<->` do pgvector), sem o over-fetch que o
+> sqlite-vec exigia. O schema é criado no boot por `scripts/setup-db.ts`
+> (`CREATE EXTENSION vector` + DDL idempotente em `src/server/db/ddl.ts`) — fonte
+> de verdade da criação de tabelas; `src/server/db/schema.ts` (Drizzle) é a fonte
+> das queries tipadas. **Greenfield:** sem migração de bancos legados.
 
 ---
 
@@ -323,19 +321,17 @@ chunk_embeddings(chunk_id PK, embedding FLOAT[384])   -- tabela virtual vec0
 
 ## 8. Concorrência e workers
 
-- **I/O bloqueante** (SDK do Groq, HTTP da Jina, SQLite) roda em worker thread via
-  `asyncio.to_thread`, para não travar o event loop do FastAPI. O SkilledAgent
-  roda o loop de skills (function calling) inteiro em uma thread — e o atalho RAG
-  do fast-path também; a ingestão de PDF/texto idem.
-- **Fila de ingestão (`app/tasks.py`, ponto 7):** com `REDIS_URL` configurado, a
-  ingestão é enfileirada (Celery) e o endpoint responde **202** (`status="queued"`);
-  um worker processa em background (`celery -A app.tasks.celery_app worker`). **Sem
-  broker**, cai no caminho **síncrono** (200 com `chunks_created`) — o comportamento
-  padrão. O PDF trafega como bytes (base64 na fila), então o worker não depende de
-  arquivo temporário do processo web.
+- **I/O assíncrono nativo:** Groq, Jina e Postgres são acessados via `await` (SDK
+  async / `fetch` / postgres.js). Não há `asyncio.to_thread` nem worker threads — o
+  event loop do Node já não bloqueia. O `SkilledAgent` roda o loop de function
+  calling inteiro com `async/await`.
+- **Ingestão síncrona:** extração + embeddings + escrita rodam no próprio request e
+  respondem **200** com `chunks_created`. Celery e Redis foram **removidos** na
+  migração para TS.
 
-> `celery[redis]` **não** está em `requirements.txt`: ativar a fila exige instalar
-> a dependência no ambiente (ver `DEBUG.md`).
+> Ponto de extensão para fila assíncrona sem Redis (ex.: pg-boss sobre o mesmo
+> Postgres) fica isolado em `services/knowledge.ts`. O limite de escrita concorrente
+> passa a ser o do Postgres (bem acima do antigo arquivo SQLite único).
 
 ---
 
@@ -446,19 +442,19 @@ pergunta inteira em contexto, então o desvio por palavra-chave deixou de existi
 ## 12. Como rodar e reproduzir
 
 ```bash
-# Local
-python -m venv .venv
-.venv/Scripts/activate                 # Windows
-pip install -r requirements.txt
-cp .env.example .env                    # preencha GROQ_API_KEY, JINA_API_KEY, ADMIN_API_KEY
-uvicorn server:app --reload --port 8000 # painel em http://localhost:8000
+# Postgres com pgvector (Docker)
+docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=postgres pgvector/pgvector:pg16
 
-# Avaliação (com GROQ_API_KEY e JINA_API_KEY no .env)
-PYTHONPATH=. .venv/Scripts/python.exe docs/eval_harness.py
-# → escreve docs/eval_log.md (usa banco temporário, não toca os dados reais)
+# App
+npm install
+cp .env.example .env          # preencha DATABASE_URL, GROQ_API_KEY, JINA_API_KEY, ADMIN_API_KEY
+npm run db:setup              # extensão pgvector + schema + seed (demo)
+npm run dev                   # painel em http://localhost:3000
 ```
 
-No primeiro boot é criado o tenant `default` e um agente `demo` (desligue com
-`SEED_DEMO=0`). Em produção (Railway), aponte `DB_DIR` para um Volume montado
-(ex.: `/app/data`), senão os bancos são recriados a cada deploy. A lista completa
-de variáveis de ambiente está em `app/config.py` e no `.env.example`.
+No `db:setup` é criado o tenant `default` e um agente `demo` (desligue com
+`SEED_DEMO=0`). Em produção (Railway), provisione um Postgres com pgvector e exponha
+`DATABASE_URL`; o deploy roda `db:setup` automaticamente. A lista completa de
+variáveis está em `src/server/config.ts` e no `.env.example`. (O antigo
+`docs/eval_harness.py` foi removido na migração; a reescrita do harness em TS fica
+como trabalho futuro.)

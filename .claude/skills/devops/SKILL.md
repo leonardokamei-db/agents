@@ -1,138 +1,107 @@
 ---
 name: devops
 description: >-
-  Playbook de DevOps/operação do blip-agent. Use para deploy (Railway/NIXPACKS),
-  variáveis de ambiente, persistência de dados (DB_DIR/Volume), workers
-  Celery+Redis, observabilidade/logs, health check, migrações de boot e rodar a
-  app local. Invoque ao mexer em Procfile, railway.toml, runtime.txt,
-  requirements.txt, .env, config.py, tasks.py, logging_ctx.py ou ao diagnosticar
-  problemas de deploy, persistência ou fila.
+  Playbook de DevOps/operação do blip-agent (Next.js + TypeScript). Use para deploy
+  (Railway/NIXPACKS), variáveis de ambiente, persistência (Postgres + pgvector),
+  ingestão síncrona, observabilidade/logs, health check, setup/seed de banco e rodar
+  a app local. Invoque ao mexer em Procfile, railway.toml, package.json, next.config.ts,
+  drizzle.config.ts, .env, config.ts, db/*, scripts/* ou ao diagnosticar problemas de
+  deploy ou banco.
 ---
 
 # DevOps & Operação — blip-agent
 
-App FastAPI single-process empacotada com **NIXPACKS** e rodada no **Railway**.
-Bancos em **SQLite** (arquivos), embeddings e LLM via **APIs externas** (Jina/Groq).
-Guia operacional detalhado: `docs/DEBUG.md`.
+App **Next.js 15 (App Router) + TypeScript** empacotada com **NIXPACKS** e rodada
+no **Railway**. Dados e vetores num único **Postgres + pgvector**; LLM/embeddings
+via APIs externas (Groq/Jina). Guia operacional detalhado: `docs/DEBUG.md`.
 
 ## Entrypoint e processo
 
-- Comando de start (Procfile **e** railway.toml): `uvicorn server:app --host 0.0.0.0 --port $PORT`.
-- `server.py` só **reexporta** `app.main:app` — a app real vive em `app/main.py`.
-  Use `server:app` em deploy; `app.main:app` funciona localmente também.
-- Python fixado em `runtime.txt` (`python-3.12.8`).
-- `requirements.txt` é enxuto **de propósito** (sem torch/sentence-transformers —
-  embeddings são hospedados na Jina). Não reintroduza dependências pesadas.
+- Build (railway.toml): `npm install --include=dev && npm run build` (o `--include=dev`
+  garante typescript/eslint para o `next build`).
+- Start (railway.toml e Procfile): `npm run db:setup && npm run start`.
+  - `db:setup` (`scripts/setup-db.ts`, via **tsx**) cria a extensão pgvector + as
+    tabelas (DDL idempotente) e semeia o tenant/agente demo. Seguro rodar a cada boot.
+  - `start` = `next start`.
+- Node fixado em `engines.node >= 20` no `package.json`.
+- **`tsx` é dependência de runtime** (não devDependency): o `db:setup` o usa no deploy.
 
-## Variáveis de ambiente (fonte: `app/config.py`)
+## Variáveis de ambiente (fonte: `src/server/config.ts`)
 
 | Variável | Obrigatória | Default | Papel |
 |---|---|---|---|
+| `DATABASE_URL` | **Sim** | — | Postgres com pgvector (`postgresql://...`) |
 | `GROQ_API_KEY` | Sim | — | LLM (Groq) |
 | `JINA_API_KEY` | Sim (RAG) | — | Embeddings (Jina) |
 | `ADMIN_API_KEY` | **Em produção** | `admin-dev-key` | Admin de plataforma / superusuário |
-| `DB_DIR` | **Em produção** | raiz do repo | Diretório de `core.db`/`rag.db` → aponte para o Volume |
-| `GROQ_MODEL` | Não | `llama-3.3-70b-versatile` | Modelo do Groq |
-| `JINA_MODEL` | Não | `jina-embeddings-v3` | Modelo de embeddings |
+| `GROQ_MODEL` / `JINA_MODEL` | Não | llama-3.3-70b / jina-embeddings-v3 | Modelos |
 | `LLM_MAX_TOKENS` / `LLM_TEMPERATURE` | Não | `512` / `0.7` | Geração |
-| `HISTORY_LIMIT` | Não | `5` | Mensagens enviadas ao LLM |
-| `RAG_TOP_K` | Não | `3` | Chunks por pergunta |
-| `SEED_DEMO` | Não | `1` | `0` desliga o agente demo no 1º boot |
-| `DEFAULT_TENANT_ID` | Não | `default` | Tenant dos agentes migrados |
-| `LOG_LEVEL` | Não | `INFO` | Nível de log |
-| `REDIS_URL` | Não | vazio | Liga a fila Celery (vazio = síncrono) |
-| `PORT` | Não | injetado pelo Railway | Porta do uvicorn |
+| `HISTORY_LIMIT` / `RAG_TOP_K` | Não | `5` / `3` | Histórico ao LLM / chunks por pergunta |
+| `SEED_DEMO` | Não | `1` | `0` desliga o agente demo no seed |
+| `DEFAULT_TENANT_ID` / `LOG_LEVEL` | Não | `default` / `INFO` | Tenant padrão / log |
 
-Em produção **defina `ADMIN_API_KEY`** (o default `admin-dev-key` é só para dev) e
-guarde a `api_key` do tenant `default` que aparece **uma vez** no log do 1º boot.
-Nunca commite `.env` (use `.env.example` como referência).
+Em produção **defina `ADMIN_API_KEY`** e guarde a `api_key` do tenant `default`
+(aparece **uma vez** no log do seed). **Não há mais** `REDIS_URL`, `DB_DIR`, nem
+variáveis de SQLite.
 
-## Persistência (a pegadinha nº 1)
+## Persistência (Postgres, não mais SQLite)
 
-Os SQLite vivem em `DB_DIR`. **Sem volume, todo deploy recria os bancos** — agentes,
-produtos e PDFs somem. No Railway:
+Todo o estado vive no Postgres: tenants/users/memberships/agents/products e os
+`chunks` com `embedding vector(384)`. No Railway:
 
-1. Settings → Volumes → New Volume, mount path **`/app/data`**.
-2. Variables → `DB_DIR = /app/data`.
+1. Provisione um Postgres **com pgvector** — imagem `pgvector/pgvector:pg16` ou o
+   plugin Postgres do Railway (≥ 16; o `db:setup` roda `CREATE EXTENSION vector`).
+2. Exponha `DATABASE_URL` ao serviço da app.
 
-`core.db` = tenants/users/memberships/agents/products. `rag.db` = chunks +
-embeddings (sqlite-vec). Conexão usa **WAL** (`PRAGMA journal_mode = WAL`) para
-concorrência de leitura/escrita; ainda assim é arquivo único — escrita concorrente
-pesada é o limite (caminho de evolução: Postgres).
+Sem Volume, sem arquivos. O DDL canônico está em `src/server/db/ddl.ts` e **deve
+ficar em sincronia** com o schema Drizzle (`src/server/db/schema.ts`) — não há
+drizzle-kit no caminho de deploy (mude os dois ao alterar uma tabela).
 
-> Comentário **desatualizado** em `railway.toml`: fala em baixar "modelo de
-> embedding (~80MB) + torch" e cita "products.db". Não é mais verdade (Jina
-> hospedada; arquivos são `core.db`/`rag.db`). Ajuste se for tocar no arquivo.
+## Setup / boot
 
-## Migrações de boot (automáticas, idempotentes)
-
-`lifespan` em `main.py` chama `init_db()` + `init_rag_db()` + `_bootstrap()`:
-- cria o schema se faltar;
-- migra `core.db` legado (agente com `api_key`, sem tenant) para multi-tenant
-  (agentes → tenant `default`, `api_key` por agente descartada, produtos/RAG
-  preservados);
-- renomeia `chunks.tenant_id` → `agent_id` em `rag.db`;
-- garante o tenant `default` e semeia o agente `demo` (se `SEED_DEMO=1` e banco vazio).
-
-Rodar de novo é seguro (idempotente). Não há ferramenta de migração externa —
-o boot é o migrador.
+Greenfield: sem migração de bancos legados. O deploy roda `db:setup`:
+`CREATE EXTENSION vector` → DDL `CREATE TABLE IF NOT EXISTS ...` → `bootstrap()`
+(tenant `default` + agente demo se `SEED_DEMO=1` e banco vazio). Tudo idempotente.
+Evolução: `npm run db:push` (drizzle-kit, dev) ou adotar `generate`/`migrate`.
 
 ## Health check
 
-`GET /health` (é o `healthcheckPath` do Railway, timeout 300s):
-
 ```bash
-curl -s localhost:8000/health
-# {"status":"ok","model":"...","celery":false,"tenants":["default"]}
+curl -s localhost:3000/health
+# {"status":"ok","model":"...","tenants":["default"]}
 ```
 
-`celery` reflete `CELERY_ENABLED` (há `REDIS_URL`?). `tenants` lista os ids — útil
-para confirmar que o Volume persistiu os dados após um deploy.
+## Ingestão (sem fila)
 
-## Workers / fila de ingestão (Celery + Redis)
-
-Por padrão **não há broker** → ingestão de PDF/texto roda **síncrona** no processo
-web (responde 200 com `chunks_created`). Para descarregar (deploy fora do Railway
-ou com serviço Redis):
-
-```bash
-pip install "celery[redis]"          # NÃO está no requirements.txt
-export REDIS_URL=redis://localhost:6379/0
-celery -A app.tasks.celery_app worker --loglevel=INFO   # processo separado
-```
-
-Com `REDIS_URL` setado, `POST .../knowledge/pdf|text` responde **202**
-(`{"status":"queued","task_id":...}`) e o worker processa em background. Sem broker,
-cai no síncrono automaticamente (`app/tasks.py`). O PDF vai como base64 na fila —
-o worker não depende de arquivo local do web.
+A ingestão de PDF/texto roda **síncrona** no request (`200` com `chunks_created`).
+Celery e Redis foram removidos. PDFs são extraídos com `unpdf` (puro JS) em
+`src/server/rag.ts`. Ponto de extensão para fila assíncrona sem Redis (ex.: pg-boss):
+`src/server/services/knowledge.ts`.
 
 ## Observabilidade
 
-- Formato de log (root reconfigurado em `logging_ctx.configure_logging`):
-  `… INFO [req=<id> tenant=<id>] blip-agent.<modulo> <msg>`.
-- `req` vem do header `X-Request-ID` (ou é gerado) e volta na resposta — case
-  log↔chamada. `tenant` é extraído do path `/v1/tenants/{id}/...`.
-- Ajuste verbosidade com `LOG_LEVEL` (`DEBUG`/`WARNING`). Tabela de "o que cada
-  logger conta" em `docs/DEBUG.md`.
-- Erros tratados **não vazam** detalhe ao usuário: o `str(e)` fica só no log.
+- Formato (`src/server/logging.ts`): `<iso>  INFO  [req=<id> tenant=<id>] blip-agent.<modulo>  <msg>`.
+- `req` vem do header `X-Request-ID` (ou gerado pelo wrapper `http/route.ts`) e volta
+  na resposta. `tenant` vem do path. Correlação via `AsyncLocalStorage`. Erros
+  tratados não vazam detalhe ao usuário.
 
 ## Rodar local
 
 ```bash
-python -m venv .venv
-.venv/Scripts/activate            # Windows (bash: source .venv/Scripts/activate)
-pip install -r requirements.txt
-cp .env.example .env              # preencha as chaves
-uvicorn server:app --reload --port 8000   # painel em http://localhost:8000
+docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=postgres pgvector/pgvector:pg16
+npm install
+cp .env.example .env          # DATABASE_URL, GROQ_API_KEY, JINA_API_KEY, ADMIN_API_KEY
+npm run db:setup
+npm run dev                   # painel em http://localhost:3000
 ```
+
+Estático: `npm run typecheck` · `npm run lint` · `npm run build`.
 
 ## Checklist de deploy
 
-- [ ] `GROQ_API_KEY`, `JINA_API_KEY`, `ADMIN_API_KEY` definidas no provedor.
-- [ ] `DB_DIR` apontando para Volume montado (senão, dados efêmeros).
-- [ ] `/health` responde `ok` e lista os tenants esperados após o deploy.
-- [ ] `SEED_DEMO=0` se não quiser o agente demo em produção.
+- [ ] Postgres com pgvector; `DATABASE_URL` exposta ao serviço.
+- [ ] `GROQ_API_KEY`, `JINA_API_KEY`, `ADMIN_API_KEY` definidas.
+- [ ] Build = `npm install --include=dev && npm run build`; start roda `db:setup` antes.
+- [ ] `/health` responde `ok` e lista os tenants esperados.
+- [ ] `SEED_DEMO=0` se não quiser o agente demo.
 - [ ] Sem `JINA_API_KEY`: a app sobe, mas RAG degrada (busca vazia; ingestão 503).
-- [ ] Se for usar fila: serviço Redis + worker Celery + `celery[redis]` instalado.
-
-CORS hoje é `allow_origins=["*"]` (ver o skill `seguranca` para o endurecimento).
