@@ -7,7 +7,7 @@
 import { agentResult, type AgentResult, type ChatMessage } from "../domain";
 import { getLogger } from "../logging";
 import { FALLBACK_HANDOFF } from "../messages";
-import { BaseAgent } from "./base";
+import { BaseAgent, type ExecuteOptions } from "./base";
 
 const log = getLogger("blip-agent.fallback");
 
@@ -18,7 +18,7 @@ export class FallbackAgent extends BaseAgent {
     return ""; // nunca usado (execute é estático)
   }
 
-  async execute(_userMessage: string, history: ChatMessage[]): Promise<AgentResult> {
+  async execute(_userMessage: string, history: ChatMessage[], _opts?: ExecuteOptions): Promise<AgentResult> {
     log.info(`FallbackAgent (history=${history.length}) — handoff.`);
     return agentResult({
       response: FALLBACK_HANDOFF,

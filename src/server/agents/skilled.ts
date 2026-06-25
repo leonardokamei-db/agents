@@ -13,11 +13,13 @@ import { getLogger } from "../logging";
 import { type ChatCompletion, type ChatMessageParam, type ChatMessageToolCall, type ChatTool, type LLMClient, ToolUseFailedError, tokensOf } from "../llm";
 import { DEGRADED_CATALOG, ORDER_CONFIRMED } from "../messages";
 import { skilledPrompt } from "../prompts";
+import { sanitizeUntrusted, stripDangerousTokens } from "../security/sanitize";
+import { makeSentinel, wrapToolData } from "../security/spotlight";
 import { enabledSkillsFor, invokeSkill, type SkillContext, toolSchemasFor } from "../skills";
 import { SHORTCUT_MAX_DISTANCE } from "../skills/knowledge";
 import { ESCALATION_KEYWORDS } from "../skills/support";
 import { wordSet } from "../textutil";
-import { BaseAgent, buildMessages, parseHandoff } from "./base";
+import { BaseAgent, buildMessages, type ExecuteOptions, parseHandoff } from "./base";
 
 const log = getLogger("blip-agent.skilled");
 
@@ -51,10 +53,14 @@ export class SkilledAgent extends BaseAgent {
   }
 
   systemPrompt(): string {
-    return skilledPrompt(this.agent, this.skillNames);
+    // Contrato do BaseAgent. O fluxo real (runLoop) monta o prompt com o
+    // sentinela do turno; este caminho não é usado em runtime pelo SkilledAgent.
+    return skilledPrompt(this.agent, this.skillNames, makeSentinel());
   }
 
-  async execute(userMessage: string, history: ChatMessage[]): Promise<AgentResult> {
+  async execute(userMessage: string, history: ChatMessage[], opts?: ExecuteOptions): Promise<AgentResult> {
+    const hardened = opts?.hardened ?? false;
+
     // Fast-path 1: escalonamento determinístico por palavra-chave (0 token).
     if (this.skillNames.includes("escalate_to_human") && hasEscalationKeyword(userMessage)) {
       log.info("Escalonamento determinístico (0 tokens).");
@@ -74,7 +80,7 @@ export class SkilledAgent extends BaseAgent {
     }
 
     // Caso geral: loop de function-calling sobre as skills habilitadas.
-    return this.runLoop(userMessage, history);
+    return this.runLoop(userMessage, history, hardened);
   }
 
   // --- fast-path RAG ------------------------------------------------------- //
@@ -84,8 +90,10 @@ export class SkilledAgent extends BaseAgent {
     if (results.length > 0 && results[0].score <= SHORTCUT_MAX_DISTANCE) {
       const top = results[0];
       log.info(`RAG shortcut: source=${top.source} dist=${top.score.toFixed(3)}`);
+      // O chunk é devolvido VERBATIM (sem LLM, sem parseHandoff): neutraliza
+      // tokens de template e [HANDOFF] caso o documento esteja envenenado.
       return agentResult({
-        response: top.content,
+        response: stripDangerousTokens(top.content),
         source: "faq_shortcut",
         ragChunksUsed: 1,
         ragSources: [top.source],
@@ -95,8 +103,10 @@ export class SkilledAgent extends BaseAgent {
   }
 
   // --- loop de tools ------------------------------------------------------- //
-  private async runLoop(userMessage: string, history: ChatMessage[]): Promise<AgentResult> {
-    const messages = buildMessages(this.systemPrompt(), userMessage, history);
+  private async runLoop(userMessage: string, history: ChatMessage[], hardened: boolean): Promise<AgentResult> {
+    const sentinel = makeSentinel();
+    const systemPrompt = skilledPrompt(this.agent, this.skillNames, sentinel, hardened);
+    const messages = buildMessages(systemPrompt, userMessage, history, sentinel);
     const state: LoopState = {
       tokensUsed: 0,
       toolsCalled: [],
@@ -137,7 +147,7 @@ export class SkilledAgent extends BaseAgent {
       const assistantMsg = response.choices[0].message;
       messages.push(assistantMsg as ChatMessageParam); // pedido de tools do modelo
 
-      const terminal = await this.handleToolCalls(assistantMsg.tool_calls ?? [], messages, state);
+      const terminal = await this.handleToolCalls(assistantMsg.tool_calls ?? [], messages, state, sentinel);
       if (terminal !== null) return terminal; // skill terminal (ex.: escalate)
 
       try {
@@ -158,6 +168,7 @@ export class SkilledAgent extends BaseAgent {
     toolCalls: ChatMessageToolCall[],
     messages: ChatMessageParam[],
     state: LoopState,
+    sentinel: string,
   ): Promise<AgentResult | null> {
     for (const tc of toolCalls) {
       if (tc.type !== "function") continue; // só function tool calls (Groq não emite outros)
@@ -171,7 +182,10 @@ export class SkilledAgent extends BaseAgent {
       }
 
       const res = await invokeSkill(name, args, this.ctx);
-      messages.push({ role: "tool", tool_call_id: tc.id, content: res.toolPayload() });
+      // Saída de skill = DADO não confiável (chunk de RAG, catálogo externo):
+      // sanitiza e envolve no bloco delimitado antes de devolver ao LLM.
+      const payload = wrapToolData(sentinel, name, sanitizeUntrusted(res.toolPayload()));
+      messages.push({ role: "tool", tool_call_id: tc.id, content: payload });
 
       if (name === "knowledge_search") {
         state.ragChunks += ((res.data as KnowledgeData | null)?.results ?? []).length;

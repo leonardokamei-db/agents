@@ -8,20 +8,26 @@
 
 import { z } from "zod";
 
+import * as config from "./config";
+
 const productMode = z.enum(["none", "internal", "external"]);
 
 // --- Chat ------------------------------------------------------------------- //
+// Limites duros de tamanho: barram payload gigante (token-flooding/custo) antes
+// de qualquer processamento. Defesa de conteúdo (injeção) vem depois, no
+// orchestrator (sanitização + detecção).
 export const chatRequestSchema = z.object({
-  message: z.string(),
+  message: z.string().min(1).max(config.CHAT_MSG_MAX),
   history: z
     .array(
       z.object({
         role: z.enum(["user", "assistant"]),
-        content: z.string(),
+        content: z.string().max(config.CHAT_CONTENT_MAX),
       }),
     )
+    .max(config.CHAT_HISTORY_MAX)
     .default([]),
-  conversation_id: z.string().nullish(),
+  conversation_id: z.string().max(128).nullish(),
 });
 export type ChatRequestInput = z.infer<typeof chatRequestSchema>;
 
@@ -47,9 +53,9 @@ export type MemberCreateInput = z.infer<typeof memberCreateSchema>;
 // --- Agentes ---------------------------------------------------------------- //
 export const agentCreateSchema = z.object({
   slug: z.string().nullish(),
-  name: z.string(),
-  system_prompt: z.string().default(""),
-  business_rules: z.string().default(""),
+  name: z.string().max(120),
+  system_prompt: z.string().max(8000).default(""),
+  business_rules: z.string().max(8000).default(""),
   max_turns: z.number().int().default(15),
   product_mode: productMode.default("none"),
   product_api_url: z.string().default(""),
@@ -91,9 +97,9 @@ export function toAgentCreate(i: AgentCreateInput): AgentCreateData {
 }
 
 export const agentUpdateSchema = z.object({
-  name: z.string().optional(),
-  system_prompt: z.string().optional(),
-  business_rules: z.string().optional(),
+  name: z.string().max(120).optional(),
+  system_prompt: z.string().max(8000).optional(),
+  business_rules: z.string().max(8000).optional(),
   max_turns: z.number().int().optional(),
   product_mode: productMode.optional(),
   product_api_url: z.string().optional(),

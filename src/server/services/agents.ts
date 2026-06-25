@@ -10,6 +10,7 @@ import { getLogger } from "../logging";
 import * as rag from "../rag";
 import { AgentRepository } from "../repositories/agents";
 import type { AgentCreateData, AgentUpdateData } from "../schemas";
+import { stripDangerousTokens } from "../security/sanitize";
 import { allSkillNames } from "../skills";
 import { slugify } from "../textutil";
 
@@ -41,6 +42,7 @@ export class AgentService {
     }
     AgentService.checkExternal(data.productMode, data.externalProducts);
     AgentService.checkSkills(data.skills);
+    AgentService.sanitizeFields(data);
     const agentId = `${tenantId}__${slug}`;
     await this.repo.insert(agentId, tenantId, slug, data);
     log.info(`Agente criado: ${agentId} (tenant=${tenantId})`);
@@ -52,6 +54,7 @@ export class AgentService {
     const ext = changes.externalProducts ?? agent.externalProducts;
     AgentService.checkExternal(mode, ext);
     if (changes.skills !== undefined) AgentService.checkSkills(changes.skills);
+    AgentService.sanitizeFields(changes);
     await this.repo.update(agent.id, changes);
     return (await this.repo.getById(agent.id))!;
   }
@@ -69,6 +72,18 @@ export class AgentService {
         "Catálogo externo desabilitado para este agente (feature flag external_products=false).",
       );
     }
+  }
+
+  /** Neutraliza tokens de chat-template nos campos textuais editáveis pelo owner
+   *  antes de persistir — eles são concatenados crus no system prompt
+   *  (`prompts.ts`), então não podem forjar fronteiras de template. */
+  private static sanitizeFields<T extends { name?: string; systemPrompt?: string; businessRules?: string }>(
+    d: T,
+  ): T {
+    if (d.name !== undefined) d.name = stripDangerousTokens(d.name);
+    if (d.systemPrompt !== undefined) d.systemPrompt = stripDangerousTokens(d.systemPrompt);
+    if (d.businessRules !== undefined) d.businessRules = stripDangerousTokens(d.businessRules);
+    return d;
   }
 
   private static checkSkills(skills: string[] | undefined): void {

@@ -84,16 +84,35 @@ campo `error` na resposta nem ecoe exceções ao cliente. Stack traces só em lo
 
 Lista alinhada com `docs/ARQUITETURA.md` §11. Em ordem de atenção:
 
-1. **Prompt injection / segurança de LLM.** `system_prompt` e `business_rules` são
-   editáveis pelo cliente e **concatenados direto** no prompt (`prompts.ts`); o
-   conteúdo recuperado por RAG também é injetado; e agora **as saídas das skills**
-   (chunks de `knowledge_search`, dados de catálogo, retorno de uma futura skill
-   remota) voltam ao LLM como mensagens `tool`. Vetores: um owner malicioso, um
-   documento envenenado na base **ou um catálogo/skill que devolva texto malicioso**
-   altera o comportamento do bot, exfiltra o prompt, ou força ações. **Antes de
-   expor amplamente:** política de sanitização/limites, separação clara de
-   instrução vs. dado (inclusive no payload de skill), e testes de jailbreak. Área
-   que pede revisão de quem tem experiência em segurança de LLM.
+1. **Prompt injection / segurança de LLM (defesas implementadas — ver `src/server/security/`).**
+   Há uma defesa em profundidade no fluxo de chat:
+   - **Limites de entrada** (`schemas.ts` + `config.ts`): `message`/`history` têm
+     `.max()` e o histórico tem cap de itens (corta token-flooding/custo).
+   - **Spotlighting** (`security/spotlight.ts`): a mensagem do cliente, o histórico
+     `user` e as **saídas de skills** (`skilled.ts`) são envolvidos em blocos
+     `<dados_do_usuario>`/`<dados_de_ferramenta>` com um **sentinela aleatório por
+     requisição** (impossível de forjar). O system prompt (`prompts.ts::securityBlock`)
+     instrui o modelo a tratar tudo dentro dos blocos como DADO, nunca instrução, e
+     a nunca revelar o prompt.
+   - **Sanitização** (`security/sanitize.ts`): NFKC + remoção de invisíveis/bidi +
+     neutralização de tokens de chat-template (`<|...|>`, `[INST]`, `</s>`...) e do
+     `[HANDOFF]` em conteúdo não confiável — aplicada à mensagem, ao histórico, ao
+     payload de skill e ao chunk verbatim do atalho RAG (`ragShortcut`).
+   - **Detecção heurística** (`security/injection.ts`): `detectInjection` pontua
+     padrões PT/EN (override, exfiltração, role-tokens, invisíveis...). O orchestrator
+     loga suspeita, **endurece** o prompt do turno em score alto e só **encaminha a
+     humano** (handoff 200) em caso extremo — minimizando falso-positivo.
+   - **Classificador opcional** (`llm.ts::classifyInjection`, atrás de
+     `PROMPT_GUARD_MODEL`, default OFF): pré-check via modelo Groq (Prompt/Llama
+     Guard) em cascata, **fail-open**.
+
+   Os campos do owner (`system_prompt`/`business_rules`/`name`) têm `.max()` e passam
+   por `stripDangerousTokens` no `AgentService` antes de persistir. **Resíduos a ter
+   em mente:** a detecção é heurística (não substitui revisão); homoglyphs entre
+   scripts não são folados por NFKC (são *flagados*, não corrigidos); o conteúdo do
+   owner segue sendo instrução legítima (papel dele — RBAC), só não pode forjar
+   fronteiras de template. Rode `npm run test:security` ao mexer nessa área e
+   acrescente casos de jailbreak novos.
 2. **SSRF no catálogo externo.** Em `product_mode="external"`, o backend faz
    `fetch(agent.productApiUrl, ...)` com uma URL **fornecida pelo owner**, enviando o
    `Authorization: Bearer` configurado. Há **dois** caminhos hoje em `catalog.ts`:
@@ -121,5 +140,7 @@ Lista alinhada com `docs/ARQUITETURA.md` §11. Em ordem de atenção:
 - [ ] Erro não devolve detalhe/stack ao cliente (em rota de chat, degrada)?
 - [ ] Update monta o `set` só por whitelist de coluna (sem chave arbitrária)?
 - [ ] Mexeu em `productApiUrl`/fetch externo? Considerou SSRF (allowlist de host)?
-- [ ] Mexeu em prompt/ingestão? Considerou injeção via config ou documento?
+- [ ] Mexeu em prompt/ingestão? Conteúdo não confiável novo passou por
+      `sanitizeUntrusted`/spotlighting e foi coberto por `detectInjection`? Rodou
+      `npm run test:security`?
 - [ ] Segredo novo: gerado com CSPRNG (`crypto.randomBytes`), exibido só 1x, fora de logs?

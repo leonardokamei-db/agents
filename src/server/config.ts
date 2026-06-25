@@ -29,6 +29,16 @@ export const LLM_TEMPERATURE = envFloat("LLM_TEMPERATURE", 0.7);
 // Economia de tokens: só as N últimas mensagens do histórico vão ao Groq.
 export const HISTORY_LIMIT = envInt("HISTORY_LIMIT", 5);
 
+// --- Segurança / anti prompt injection ------------------------------------- //
+// Limites de entrada do chat (corta payload gigante: token-flooding/custo).
+export const CHAT_MSG_MAX = envInt("CHAT_MSG_MAX", 4000);
+export const CHAT_CONTENT_MAX = envInt("CHAT_CONTENT_MAX", 4000);
+export const CHAT_HISTORY_MAX = envInt("CHAT_HISTORY_MAX", 20);
+// Classificador opcional de injeção (modelo Groq, ex.: Llama Prompt Guard /
+// Llama Guard). Vazio = DESLIGADO; só é chamado em cascata quando o heurístico
+// já suspeita. Falha do guard é fail-open (nunca bloqueia por conta própria).
+export const PROMPT_GUARD_MODEL = process.env.PROMPT_GUARD_MODEL ?? "";
+
 // --- Embeddings (Jina) ------------------------------------------------------ //
 export const JINA_API_KEY = process.env.JINA_API_KEY ?? "";
 export const JINA_MODEL = process.env.JINA_MODEL ?? "jina-embeddings-v3";
