@@ -35,3 +35,15 @@ export const ORDER_CONFIRMED =
 // Reserva indisponível em catálogo externo.
 export const RESERVE_EXTERNAL_UNAVAILABLE =
   "Reserva indisponível: catálogo externo. Encaminhe ao atendente.";
+
+// Resposta determinística (sem LLM) a uma tentativa clara de manipulação/troca de
+// papel ("prompt injection"). Permanece NO PAPEL e convida a um pedido legítimo —
+// não pode sofrer jailbreak porque o modelo nem é chamado.
+export function injectionRefusal(agentName: string): string {
+  const nome = agentName.trim() || "este negócio";
+  return (
+    `Sou o assistente virtual de ${nome} e sigo as regras do atendimento — não consigo ` +
+    "assumir outro papel, mudar de identidade nem ignorar minhas instruções. " +
+    "Mas posso ajudar com suas dúvidas e pedidos. Como posso te ajudar?"
+  );
+}

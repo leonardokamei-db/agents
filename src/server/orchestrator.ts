@@ -16,7 +16,7 @@ import { HISTORY_LIMIT, PROMPT_GUARD_MODEL } from "./config";
 import type { AgentConfig, AgentResult, ChatMessage } from "./domain";
 import type { LLMClient } from "./llm";
 import { getLogger } from "./logging";
-import { ERROR_INTERNAL, HANDOFF_GENERIC } from "./messages";
+import { ERROR_INTERNAL, injectionRefusal } from "./messages";
 import { detectInjectionAcross } from "./security/injection";
 import { sanitizeUntrusted } from "./security/sanitize";
 
@@ -77,30 +77,31 @@ export class Orchestrator {
       // 2. Classificador opcional em cascata: só quando o heurístico já suspeita
       //    E há modelo configurado. Fail-open (erro -> "unknown" -> sem efeito).
       let hardened = verdict.flagged;
-      let blocked = verdict.block;
-      if (!blocked && verdict.suspicious && PROMPT_GUARD_MODEL) {
+      let refuse = verdict.refuse;
+      if (!refuse && verdict.suspicious && PROMPT_GUARD_MODEL) {
         const guard = await this.llm.classifyInjection(message);
         if (guard === "injection") {
           hardened = true;
-          if (verdict.flagged) blocked = true; // heurística forte + modelo concordam
+          refuse = true; // o modelo confirmou manipulação que a heurística não fechou
           log.warn("Guard de injeção classificou a entrada como maliciosa.");
         }
       }
 
-      // 3. Caso extremo: encaminha a humano. Handoff 200 preserva o contrato do
-      //    chat (a rota nunca devolve erro técnico ao cliente).
-      if (blocked) {
-        log.warn("Entrada bloqueada por suspeita forte de prompt injection — handoff.");
+      // 3. Manipulação de ALTA confiança: responde NO PAPEL, sem chamar o LLM
+      //    (determinístico -> impossível de sofrer jailbreak). Não faz handoff:
+      //    o bot permanece como o assistente configurado e convida a um pedido real.
+      if (refuse) {
+        log.warn(`prompt injection recusado (determinístico): reasons=${JSON.stringify(verdict.reasons)}`);
         return {
-          response: HANDOFF_GENERIC,
-          shouldHandoff: true,
-          handoffReason: "Conteúdo suspeito; encaminhado ao atendimento humano.",
-          source: "blocked",
+          response: injectionRefusal(this.config.name),
+          shouldHandoff: false,
+          handoffReason: null,
+          source: "injection_refusal",
           tokensUsed: 0,
           toolsCalled: [],
           ragChunksUsed: 0,
           ragSources: [],
-          intent: "support",
+          intent: "chat",
           agentUsed: "guard",
           confidence: 1.0,
         };
