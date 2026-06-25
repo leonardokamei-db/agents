@@ -8,8 +8,15 @@
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 
-const SKILLS_HINT =
-  "knowledge_search · check_stock · search_products · list_products · reserve_stock · check_catalog · escalate_to_human";
+const SKILLS_LIST = [
+  "knowledge_search",
+  "check_stock",
+  "search_products",
+  "list_products",
+  "reserve_stock",
+  "check_catalog",
+  "escalate_to_human",
+];
 
 interface TenantPublic {
   id: string;
@@ -74,10 +81,6 @@ interface Member {
 }
 
 type View = "chat" | "config" | "knowledge" | "products" | "members" | "createTenant" | "createAgent";
-
-function parseSkills(str: string): string[] {
-  return (str || "").split(",").map((s) => s.trim()).filter(Boolean);
-}
 
 export default function Panel() {
   const [adminKey, setAdminKey] = useState("");
@@ -232,7 +235,7 @@ export default function Panel() {
           product_api_key: (fd.get("product_api_key") as string).trim(),
           rag_enabled: fd.get("rag_enabled") === "on",
           external_products: fd.get("external_products") === "on",
-          skills: parseSkills(fd.get("skills") as string),
+          skills: fd.getAll("skills") as string[],
         }),
       });
       await loadAgents(tid()!);
@@ -262,7 +265,7 @@ export default function Panel() {
         product_api_url: (fd.get("product_api_url") as string).trim(),
         rag_enabled: fd.get("rag_enabled") === "on",
         external_products: fd.get("external_products") === "on",
-        skills: parseSkills(fd.get("skills") as string),
+        skills: fd.getAll("skills") as string[],
       };
       const pkey = (fd.get("product_api_key") as string).trim();
       if (pkey) body.product_api_key = pkey;
@@ -693,9 +696,8 @@ export default function Panel() {
                       <label>Catálogo externo permitido</label>
                     </div>
                   </div>
-                  <label>Skills (separadas por vírgula; vazio = derivar das flags)</label>
-                  <input name="skills" placeholder="knowledge_search, check_stock, check_catalog, escalate_to_human" />
-                  <p className="hint">Disponíveis: {SKILLS_HINT}</p>
+                  <label>Skills</label>
+                  <SkillsCheckboxes />
                   <button className="btn" type="submit">
                     Criar agente
                   </button>
@@ -791,9 +793,8 @@ export default function Panel() {
                       <label>Catálogo externo permitido</label>
                     </div>
                   </div>
-                  <label>Skills (separadas por vírgula; vazio = derivar das flags)</label>
-                  <input name="skills" defaultValue={(current.skills || []).join(", ")} />
-                  <p className="hint">Disponíveis: {SKILLS_HINT}</p>
+                  <label>Skills</label>
+                  <SkillsCheckboxes active={current.skills} />
                   <button className="btn" type="submit">
                     Salvar e sincronizar
                   </button>
@@ -1056,5 +1057,18 @@ function InternalProductRow({
         </button>
       </td>
     </tr>
+  );
+}
+
+function SkillsCheckboxes({ active }: { active?: string[] }) {
+  return (
+    <div className="skills-grid">
+      {SKILLS_LIST.map((s) => (
+        <div key={s} className="check">
+          <input type="checkbox" name="skills" value={s} id={`skill-${s}`} defaultChecked={active ? active.includes(s) : false} />
+          <label htmlFor={`skill-${s}`}>{s}</label>
+        </div>
+      ))}
+    </div>
   );
 }
