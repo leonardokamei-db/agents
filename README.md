@@ -31,6 +31,7 @@ SkillResult`), registrada em `src/server/skills/`.
 | `reserve_stock` | Reserva (só catálogo interno) → handoff p/ pagamento |
 | `check_catalog` | Diagnostica a integração de catálogo (interno/externo) |
 | `escalate_to_human` | Handoff para atendente humano (terminal, 0 token) |
+| `create_ticket` | Abre um chamado de suporte (nome + e-mail do usuário obrigatórios; IA define a criticidade) e grava na tabela `tickets` (Postgres/Supabase) |
 
 ## Arquitetura (camadas, dependência só "para baixo")
 

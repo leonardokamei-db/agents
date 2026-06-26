@@ -189,6 +189,7 @@ dessincronizam — é a generalização do antigo `app/tools.py`.
 | **reserve_stock** | catalog | Reserva (só interno); sucesso → handoff p/ pagamento | dado JSON |
 | **check_catalog** | catalog | **(nova)** Verifica o catálogo do cliente: configuração + acessibilidade | dado JSON |
 | **escalate_to_human** | support | Handoff para atendente humano (skill terminal) | 0 |
+| **create_ticket** | support | **(nova)** Abre um chamado (nome/e-mail do usuário obrigatórios; IA classifica a criticidade) e grava na tabela `tickets` | dado JSON |
 
 **Quais skills um agente tem?** `app/skills/enabled_skills_for(agent)`: se
 `agent.skills` é explícito, usa-o; se vazio, **deriva das feature flags**

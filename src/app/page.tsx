@@ -16,6 +16,7 @@ const SKILLS_LIST = [
   "reserve_stock",
   "check_catalog",
   "escalate_to_human",
+  "create_ticket",
 ];
 
 interface TenantPublic {

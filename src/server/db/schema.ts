@@ -91,6 +91,24 @@ export const products = pgTable("products", {
   unit: text("unit").notNull().default("unidade"),
 });
 
+// Chamados (tickets) de suporte abertos pelo agente via a skill `create_ticket`.
+// Escopados por agente (agent_id) — mesma invariante de isolamento dos produtos.
+// `created_at` (a "data" do chamado) é definido pelo banco, nunca pelo LLM; a
+// `criticality` é classificada pela IA (baixa | normal | alta — texto livre no
+// banco, validado por Zod na fronteira da skill). Índice criado no ddl.ts.
+export const tickets = pgTable("tickets", {
+  id: serial("id").primaryKey(),
+  agentId: text("agent_id")
+    .notNull()
+    .references(() => agents.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  description: text("description").notNull().default(""),
+  userName: text("user_name").notNull(),
+  userEmail: text("user_email").notNull(),
+  criticality: text("criticality").notNull().default("normal"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // Vector store RAG (antes rag.db/sqlite-vec). Uma só tabela com a coluna
 // `embedding vector(384)`; a busca KNN filtra por agent_id no WHERE (pgvector),
 // eliminando o over-fetch x3 que o sqlite-vec exigia. Sem FK de propósito: a

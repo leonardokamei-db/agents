@@ -58,6 +58,19 @@ create table if not exists products (
     unit        text not null default 'unidade'
 );
 
+create table if not exists tickets (
+    id           serial primary key,
+    agent_id     text not null references agents(id) on delete cascade,
+    title        text not null,
+    description  text not null default '',
+    user_name    text not null,
+    user_email   text not null,
+    criticality  text not null default 'normal',
+    created_at   timestamptz not null default now()
+);
+
+create index if not exists tickets_agent_idx on tickets (agent_id);
+
 create table if not exists chunks (
     id           serial primary key,
     agent_id     text not null,

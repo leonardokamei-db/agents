@@ -77,6 +77,13 @@ export function skilledPrompt(
   if (has.has("escalate_to_human")) {
     rules.push("se precisar de uma pessoa, use escalate_to_human");
   }
+  if (has.has("create_ticket")) {
+    rules.push(
+      "para abrir um chamado use create_ticket, mas SOMENTE depois de ter o nome E o e-mail " +
+        "do usuário (ambos obrigatórios — peça-os se faltarem); você define a criticidade " +
+        "(baixa/normal/alta) conforme a gravidade",
+    );
+  }
 
   const parts = [basePrompt(agent)];
   if (rules.length > 0) {

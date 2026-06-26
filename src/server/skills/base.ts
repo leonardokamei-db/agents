@@ -157,7 +157,11 @@ export function enabledSkillsFor(agent: AgentConfig): string[] {
 
 /** Valida os args com Zod e despacha. Sempre devolve SkillResult (erro -> data.error). */
 export async function invokeSkill(name: string, rawArgs: unknown, ctx: SkillContext): Promise<SkillResult> {
-  log.info(`skill: ${name}(${safeArgs(rawArgs)}) agent=${ctx.agent.id}`);
+  // Os args podem conter PII (ex.: nome/e-mail do usuário em create_ticket), então
+  // o dump completo fica em DEBUG (abaixo do threshold padrão INFO); no INFO só vai
+  // o nome da skill + o agente.
+  log.info(`skill: ${name} agent=${ctx.agent.id}`);
+  log.debug(`skill args: ${name}(${safeArgs(rawArgs)})`);
   const sk = REGISTRY.get(name);
   if (!sk) return new SkillResult({ data: { error: `Skill desconhecida: ${name}` } });
   const parsed = sk.argsModel.safeParse(rawArgs ?? {});

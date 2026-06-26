@@ -96,6 +96,29 @@ export function productRowFromExternal(
   };
 }
 
+/** Criticidade de um chamado — classificada pela IA na skill `create_ticket`. */
+export type TicketCriticality = "baixa" | "normal" | "alta";
+
+/** Chamado de suporte registrado — espelha a tabela `tickets`. */
+export interface TicketRow {
+  id: number;
+  title: string;
+  description: string;
+  userName: string;
+  userEmail: string;
+  criticality: TicketCriticality;
+  createdAt: string;
+}
+
+/** Dados para abrir um chamado (DTO camelCase consumido pelo repositório). */
+export interface TicketCreateInput {
+  title: string;
+  description: string;
+  userName: string;
+  userEmail: string;
+  criticality: TicketCriticality;
+}
+
 /** Saída padronizada de qualquer agente. */
 export interface AgentResult {
   response: string;

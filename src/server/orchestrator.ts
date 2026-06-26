@@ -43,7 +43,7 @@ function intentFromResult(result: AgentResult): string {
   const tools = new Set(result.toolsCalled);
   const source = result.source;
   if (source === "faq_shortcut" || source === "llm_rag" || tools.has("knowledge_search")) return "faq";
-  if (source === "support_escalation" || tools.has("escalate_to_human")) return "support";
+  if (source === "support_escalation" || tools.has("escalate_to_human") || tools.has("create_ticket")) return "support";
   for (const s of CATALOG_SKILLS) {
     if (tools.has(s)) return "order";
   }

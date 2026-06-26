@@ -5,9 +5,12 @@
  * todas as tabelas se faltarem. É a fonte de verdade da CRIAÇÃO de tabelas; o
  * `schema.ts` (Drizzle) é a fonte das QUERIES tipadas.
  *
- * INVARIANTE: este DDL e `schema.ts` descrevem as MESMAS colunas/tipos. Ao mudar
- * uma tabela, altere os dois (não há drizzle-kit no caminho de deploy). Greenfield:
- * sem migração de bancos legados.
+ * INVARIANTE: este DDL, `schema.ts` (Drizzle) e `supabase/schema.sql` (o artefato
+ * rodado no SQL Editor do Supabase em produção) descrevem as MESMAS colunas/tipos.
+ * Ao mudar uma tabela, altere os TRÊS — não há drizzle-kit no caminho de deploy, e o
+ * deploy do Railway roda `db:seed` (não `db:setup`), então `SCHEMA_SQL` daqui NÃO é
+ * aplicado em produção: quem cria as tabelas no Supabase é `supabase/schema.sql`.
+ * Greenfield: sem migração de bancos legados.
  */
 
 export const EXTENSION_SQL = `CREATE EXTENSION IF NOT EXISTS vector;`;
@@ -62,6 +65,19 @@ CREATE TABLE IF NOT EXISTS products (
     stock       INTEGER NOT NULL DEFAULT 0,
     unit        TEXT NOT NULL DEFAULT 'unidade'
 );
+
+CREATE TABLE IF NOT EXISTS tickets (
+    id           SERIAL PRIMARY KEY,
+    agent_id     TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+    title        TEXT NOT NULL,
+    description  TEXT NOT NULL DEFAULT '',
+    user_name    TEXT NOT NULL,
+    user_email   TEXT NOT NULL,
+    criticality  TEXT NOT NULL DEFAULT 'normal',
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS tickets_agent_idx ON tickets (agent_id);
 
 CREATE TABLE IF NOT EXISTS chunks (
     id           SERIAL PRIMARY KEY,
