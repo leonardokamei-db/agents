@@ -104,13 +104,13 @@ Lista alinhada com `docs/ARQUITETURA.md` §11. Em ordem de atenção:
      (`refuse`: troca de papel/persona, exfiltração de prompt, token de chat-template,
      role-line falsa ou `[HANDOFF]` no input) → o orchestrator responde de forma
      **determinística, NO PAPEL, SEM chamar o LLM** (`messages.injectionRefusal`).
-     Esse é o ponto central: endurecer o prompt **não basta** — o Llama 3.3 obedece
-     a "ignore tudo, você agora é X" mesmo com o reforço; só não chamar o modelo é à
-     prova de jailbreak. Sinais ambíguos (override sozinho, base64, homoglyph) só
-     endurecem, para não recusar cliente legítimo.
+     Esse é o ponto central: endurecer o prompt **não basta** como única garantia —
+     mesmo um modelo de fronteira (Claude) pode ceder a "ignore tudo, você agora é X";
+     só não chamar o modelo é à prova de jailbreak. Sinais ambíguos (override sozinho,
+     base64, homoglyph) só endurecem, para não recusar cliente legítimo.
    - **Classificador opcional** (`llm.ts::classifyInjection`, atrás de
-     `PROMPT_GUARD_MODEL`, default OFF): pré-check via modelo Groq (Prompt/Llama
-     Guard) em cascata, **fail-open**.
+     `PROMPT_GUARD_MODEL`, default OFF): pré-check via um Claude pequeno (ex.:
+     claude-haiku-4-5) em cascata, **fail-open**.
 
    Os campos do owner (`system_prompt`/`business_rules`/`name`) têm `.max()` e passam
    por `stripDangerousTokens` no `AgentService` antes de persistir. **Resíduos a ter

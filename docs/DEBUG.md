@@ -36,7 +36,7 @@ LOG_LEVEL=WARNING # só avisos/erros
 | `blip-agent.skilled` | fast-paths (escalonamento/atalho RAG), loop de tools, retries |
 | `blip-agent.rag` | ingestão (nº de chunks), atalhos de busca |
 | `blip-agent.catalog` | reserva de estoque, falhas da API externa |
-| `blip-agent.llm` | erros do Groq, `tool_use_failed` |
+| `blip-agent.llm` | erros da Anthropic (conexão, rate limit) |
 | `blip-agent.services.*` | criação de tenant/agente/membership |
 | `blip-agent.bootstrap` | criação do tenant default + seed do agente demo |
 

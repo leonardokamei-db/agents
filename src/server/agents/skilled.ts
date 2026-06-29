@@ -10,7 +10,7 @@
 
 import { agentResult, type AgentConfig, type AgentResult, type ChatMessage } from "../domain";
 import { getLogger } from "../logging";
-import { type ChatCompletion, type ChatMessageParam, type ChatMessageToolCall, type ChatTool, type LLMClient, ToolUseFailedError, tokensOf } from "../llm";
+import { type ChatCompletion, type ChatMessageParam, type ChatTool, type LLMClient, type ToolCall, type ToolResult, ToolUseFailedError, tokensOf } from "../llm";
 import { DEGRADED_CATALOG, ORDER_CONFIRMED } from "../messages";
 import { skilledPrompt } from "../prompts";
 import { sanitizeUntrusted, stripDangerousTokens } from "../security/sanitize";
@@ -142,12 +142,12 @@ export class SkilledAgent extends BaseAgent {
     }
 
     let iterations = 0;
-    while (response.choices[0]?.finish_reason === "tool_calls" && iterations < MAX_TOOL_ITERATIONS) {
+    while (response.stoppedForTools && iterations < MAX_TOOL_ITERATIONS) {
       iterations++;
-      const assistantMsg = response.choices[0].message;
-      messages.push(assistantMsg as ChatMessageParam); // pedido de tools do modelo
+      // Reecoa o turno do assistente que pediu as ferramentas (texto + tool calls).
+      messages.push({ role: "assistant", content: response.text, toolCalls: response.toolCalls });
 
-      const terminal = await this.handleToolCalls(assistantMsg.tool_calls ?? [], messages, state, sentinel);
+      const terminal = await this.handleToolCalls(response.toolCalls, messages, state, sentinel);
       if (terminal !== null) return terminal; // skill terminal (ex.: escalate)
 
       try {
@@ -161,31 +161,26 @@ export class SkilledAgent extends BaseAgent {
       }
     }
 
-    return this.result(response.choices[0]?.message?.content ?? "", state);
+    return this.result(response.text, state);
   }
 
   private async handleToolCalls(
-    toolCalls: ChatMessageToolCall[],
+    toolCalls: ToolCall[],
     messages: ChatMessageParam[],
     state: LoopState,
     sentinel: string,
   ): Promise<AgentResult | null> {
+    const results: ToolResult[] = [];
     for (const tc of toolCalls) {
-      if (tc.type !== "function") continue; // só function tool calls (Groq não emite outros)
-      const name = tc.function.name;
+      const name = tc.name;
       state.toolsCalled.push(name);
-      let args: unknown = {};
-      try {
-        args = JSON.parse(tc.function.arguments || "{}");
-      } catch {
-        args = {};
-      }
+      const args = tc.args ?? {}; // a Anthropic já entrega o input desserializado
 
       const res = await invokeSkill(name, args, this.ctx);
       // Saída de skill = DADO não confiável (chunk de RAG, catálogo externo):
       // sanitiza e envolve no bloco delimitado antes de devolver ao LLM.
       const payload = wrapToolData(sentinel, name, sanitizeUntrusted(res.toolPayload()));
-      messages.push({ role: "tool", tool_call_id: tc.id, content: payload });
+      results.push({ toolCallId: tc.id, content: payload });
 
       if (name === "knowledge_search") {
         state.ragChunks += ((res.data as KnowledgeData | null)?.results ?? []).length;
@@ -194,7 +189,7 @@ export class SkilledAgent extends BaseAgent {
 
       if (res.handoff) {
         if (res.directResponse) {
-          // skill terminal -> encerra o turno já
+          // skill terminal -> encerra o turno já (sem continuar a conversa)
           return agentResult({
             response: res.directResponse,
             shouldHandoff: true,
@@ -208,6 +203,8 @@ export class SkilledAgent extends BaseAgent {
         state.handoffReason = res.handoffReason;
       }
     }
+    // Todos os resultados desta rodada vão num único turno user (Messages API).
+    messages.push({ role: "tool", results });
     return null;
   }
 

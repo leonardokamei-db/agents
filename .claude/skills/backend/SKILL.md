@@ -1,7 +1,7 @@
 ---
 name: backend
 description: >-
-  Playbook de backend do blip-agent (Next.js + TypeScript + Groq + RAG). Use ao
+  Playbook de backend do blip-agent (Next.js + TypeScript + Anthropic Claude + RAG). Use ao
   adicionar ou alterar rotas, skills (capacidades do agente), o agente flexível,
   orquestração, RAG, catálogo, integração com LLM ou acesso a dados (Drizzle/Postgres).
   Cobre as camadas (route → services → repositories → domínio), o fluxo de chat por
@@ -12,7 +12,7 @@ description: >-
 # Backend — blip-agent
 
 Backend multi-tenant de agentes de atendimento. **Next.js (App Router)** + **TypeScript**
-+ **Groq** (LLM) + **RAG** (pgvector + embeddings Jina) + **Postgres** (Drizzle ORM).
++ **Anthropic Claude** (LLM) + **RAG** (pgvector + embeddings Jina) + **Postgres** (Drizzle ORM).
 Visão completa em `docs/ARQUITETURA.md`; este skill é o **como fazer** no dia a dia.
 
 ## A regra de ouro: 4 camadas, dependência só "para baixo"
@@ -94,7 +94,7 @@ Registry, agente e schema não mudam — só o transporte. Hoje tudo é `LocalSk
 
 ## Async (importante)
 
-Tudo é **async nativo** em Node: Groq (SDK async), Jina (`fetch`) e Postgres (postgres.js)
+Tudo é **async nativo** em Node: Anthropic (SDK async), Jina (`fetch`) e Postgres (postgres.js)
 são acessados com `await`. **Não** há `asyncio.to_thread` nem worker threads (era do Python).
 As skills podem ser `async`; o agente as aguarda no loop.
 

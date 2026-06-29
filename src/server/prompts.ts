@@ -1,7 +1,7 @@
 /**
  * Construção de system prompts compactos (porta `app/prompts.py`).
  * Base de ~2 frases + só as regras das famílias de skill habilitadas. Menos
- * texto fixo == menos tokens de entrada em TODA chamada ao Groq.
+ * texto fixo == menos tokens de entrada em TODA chamada ao LLM.
  */
 
 import type { AgentConfig } from "./domain";

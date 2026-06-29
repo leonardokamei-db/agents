@@ -10,8 +10,8 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const tenants = await new TenantRepository().list();
-    return NextResponse.json({ status: "ok", model: config.GROQ_MODEL, tenants: tenants.map((t) => t.id) });
+    return NextResponse.json({ status: "ok", model: config.ANTHROPIC_MODEL, tenants: tenants.map((t) => t.id) });
   } catch {
-    return NextResponse.json({ status: "ok", model: config.GROQ_MODEL, tenants: [] });
+    return NextResponse.json({ status: "ok", model: config.ANTHROPIC_MODEL, tenants: [] });
   }
 }

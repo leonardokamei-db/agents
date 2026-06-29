@@ -19,8 +19,8 @@
     "db:setup": "tsx scripts/setup-db.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.107.0",
     "drizzle-orm": "^0.38.3",
-    "groq-sdk": "^1.3.0",
     "next": "^15.1.6",
     "postgres": "^3.4.5",
     "react": "^19.0.0",

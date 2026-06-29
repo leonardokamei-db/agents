@@ -5,7 +5,7 @@ dono de N **agentes**; cada agente tem endpoint de chat próprio, base de
 conhecimento (RAG) própria, regras de negócio editáveis e catálogo de produtos
 opcional — tudo configurável por API/painel, **sem redeploy**.
 
-- **Stack:** Next.js 15 (App Router) · TypeScript · Groq (LLM) · Jina (embeddings) · **Postgres + pgvector** (dados + vetores) · Drizzle ORM
+- **Stack:** Next.js 15 (App Router) · TypeScript · Anthropic Claude (LLM) · Jina (embeddings) · **Postgres + pgvector** (dados + vetores) · Drizzle ORM
 - **Deploy:** Railway (NIXPACKS) — `next build` / `next start`; estado no Postgres (sem SQLite, sem Redis)
 - **Painel:** servido em `/` (mesma origem da API; usa a `ADMIN_API_KEY` como superusuário)
 
@@ -51,7 +51,7 @@ src/
     domain.ts           — tipos de domínio  ·  schemas.ts — validação Zod
     errors.ts / messages.ts — AppError tipado / copy pt-BR centralizada
     logging.ts          — correlação de log (requestId + tenant via AsyncLocalStorage)
-    llm.ts / embeddings.ts  — clientes Groq / Jina
+    llm.ts / embeddings.ts  — clientes Anthropic / Jina
     rag.ts              — vector store pgvector (chunking + ingestão + busca KNN)
     catalog.ts          — produtos: Postgres interno OU API REST externa do cliente
     prompts.ts          — system prompts compactos (só as regras das skills habilitadas)
@@ -72,7 +72,7 @@ docker run -d --name blip-pg -p 5432:5432 -e POSTGRES_PASSWORD=postgres pgvector
 
 # 2. Dependências e env
 npm install
-cp .env.example .env            # preencha DATABASE_URL, GROQ_API_KEY, JINA_API_KEY, ADMIN_API_KEY
+cp .env.example .env            # preencha DATABASE_URL, ANTHROPIC_API_KEY, JINA_API_KEY, ADMIN_API_KEY
 
 # 3. Banco (extensão pgvector + tabelas + agente demo) e app
 npm run db:setup
@@ -107,7 +107,7 @@ URLs e contratos **idênticos** ao backend anterior. Endpoints de agente sob
 | GET | `/health` | status, modelo, tenants |
 
 ## Economia de tokens
-- Só as últimas `HISTORY_LIMIT` mensagens (padrão **5**) vão ao Groq.
+- Só as últimas `HISTORY_LIMIT` mensagens (padrão **5**) vão ao LLM.
 - System prompts compactos: base + **só** as regras das skills habilitadas.
 - `RAG_TOP_K` chunks por pergunta (padrão **3**).
 - Atalhos de **0 token**: match RAG fortíssimo responde o chunk literal; palavra-chave
@@ -117,10 +117,10 @@ URLs e contratos **idênticos** ao backend anterior. Endpoints de agente sob
 | Variável | Obrigatória | Descrição |
 |---|---|---|
 | `DATABASE_URL` | Sim | Postgres com pgvector (`postgresql://...`). |
-| `GROQ_API_KEY` | Sim | LLM (Groq). |
+| `ANTHROPIC_API_KEY` | Sim | LLM (Anthropic Claude). |
 | `JINA_API_KEY` | Sim (RAG) | Embeddings (Jina). |
 | `ADMIN_API_KEY` | Em produção | Admin de plataforma (padrão dev: `admin-dev-key`). |
-| `GROQ_MODEL` | Não | Padrão `llama-3.3-70b-versatile`. |
+| `ANTHROPIC_MODEL` | Não | Padrão `claude-haiku-4-5` (`claude-sonnet-4-6`/`claude-opus-4-8` p/ mais qualidade). |
 | `JINA_MODEL` | Não | Padrão `jina-embeddings-v3`. |
 | `HISTORY_LIMIT` / `RAG_TOP_K` | Não | Padrão 5 / 3. |
 | `SEED_DEMO` | Não | `0` desativa o agente demo no primeiro boot. |
@@ -137,7 +137,7 @@ Banco no **Supabase** (Postgres + pgvector); app no **Railway**.
    `supabase/schema.sql` no SQL Editor (cria as tabelas). Opcional: `supabase/seed.sql`.
 2. **Conexão:** copie a string do **Pooler** do Supabase (host `*.pooler.supabase.com`,
    IPv4) — a conexão direta (`db.<ref>.supabase.co`) é IPv6 e o Railway não alcança.
-3. **Railway:** defina `DATABASE_URL` (pooler), `GROQ_API_KEY`, `JINA_API_KEY`,
+3. **Railway:** defina `DATABASE_URL` (pooler), `ANTHROPIC_API_KEY`, `JINA_API_KEY`,
    `ADMIN_API_KEY` em Variables. O deploy roda `npm run db:seed` (semeia tenant
    default + demo, idempotente) e sobe o `next start` — ver `railway.toml`.
    Healthcheck em `/health`.

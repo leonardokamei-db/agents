@@ -10,7 +10,7 @@ cada bot.
 Usuários se vinculam a um tenant por uma **membership** com papel (`owner`/
 `member`) — RBAC mínimo. A credencial de consumo vive no nível do **tenant**.
 
-- **Stack:** Next.js 15 (App Router) · TypeScript · Groq (LLM) · Jina (embeddings) · **Postgres + pgvector** (dados e vetores no mesmo engine) · Drizzle ORM
+- **Stack:** Next.js 15 (App Router) · TypeScript · Anthropic Claude (LLM) · Jina (embeddings) · **Postgres + pgvector** (dados e vetores no mesmo engine) · Drizzle ORM
 - **Deploy:** Railway (NIXPACKS), `next build` / `next start`; estado no Postgres (sem SQLite, sem Volume). No deploy roda `npm run db:setup` (extensão pgvector + schema + seed, idempotente)
 - **Front-end:** painel admin React (`src/app/page.tsx`) servido pela própria app em `/` (usa a `ADMIN_API_KEY` como superusuário)
 - **Camadas:** rotas (HTTP) → services (regra de negócio) → repositories (Drizzle) → domínio tipado
@@ -54,12 +54,12 @@ Usuários se vinculam a um tenant por uma **membership** com papel (`owner`/
                                  ▼         ▼      ▼
                           ┌──────────┐ ┌──────┐ ┌─────────┐
                           │  rag.py  │ │llm.py│ │catalog. │
-                          │ sqlite-  │ │ Groq │ │ py      │
+                          │ sqlite-  │ │ LLM  │ │ py      │
                           │ vec      │ └──┬───┘ └────┬────┘
                           └────┬─────┘    │          │
                                │          │     ┌────┴─────┐
                           ┌────▼────┐     │     │ interno  │ SQLite
-                       embeddings   │  Groq API │   OU     │
+                       embeddings   │  LLM API  │   OU     │
                         (Jina API)──┘           │ externo  │ API REST do cliente
                                                 └──────────┘
 ```
@@ -257,7 +257,7 @@ O agente acessa tudo isso pelas **skills de catálogo** (`app/skills/catalog.py`
 o modelo chama `check_stock`, `search_products`, `list_products`, `reserve_stock`
 ou `check_catalog`, e o backend executa contra a fonte configurada. As skills
 vivem no **registry** de `app/skills/` (registradas com `@skill(...)` + um modelo
-Pydantic de argumentos; schema enviado ao Groq e dispatch via `invoke_skill`/
+Pydantic de argumentos; schema enviado ao LLM e dispatch via `invoke_skill`/
 `model_validate` saem da mesma fonte — §3). O modelo nunca inventa preço ou
 estoque. A skill **`check_catalog`** é nova: diagnostica o catálogo do cliente
 (modo, se está configurado e — no externo — se está acessível), sem expor a
@@ -322,7 +322,7 @@ chunks(id PK, agent_id, source_name, chunk_index, content, embedding vector(384)
 
 ## 8. Concorrência e workers
 
-- **I/O assíncrono nativo:** Groq, Jina e Postgres são acessados via `await` (SDK
+- **I/O assíncrono nativo:** Anthropic, Jina e Postgres são acessados via `await` (SDK
   async / `fetch` / postgres.js). Não há `asyncio.to_thread` nem worker threads — o
   event loop do Node já não bloqueia. O `SkilledAgent` roda o loop de function
   calling inteiro com `async/await`.
@@ -448,7 +448,7 @@ docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=postgres pgvector/pgvector:pg16
 
 # App
 npm install
-cp .env.example .env          # preencha DATABASE_URL, GROQ_API_KEY, JINA_API_KEY, ADMIN_API_KEY
+cp .env.example .env          # preencha DATABASE_URL, ANTHROPIC_API_KEY, JINA_API_KEY, ADMIN_API_KEY
 npm run db:setup              # extensão pgvector + schema + seed (demo)
 npm run dev                   # painel em http://localhost:3000
 ```

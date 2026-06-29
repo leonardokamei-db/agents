@@ -13,20 +13,14 @@ function envInt(name: string, fallback: number): number {
   return Number.isNaN(n) ? fallback : n;
 }
 
-function envFloat(name: string, fallback: number): number {
-  const raw = process.env[name];
-  if (raw === undefined || raw === "") return fallback;
-  const n = Number.parseFloat(raw);
-  return Number.isNaN(n) ? fallback : n;
-}
-
-// --- LLM (Groq) ------------------------------------------------------------ //
-export const GROQ_API_KEY = process.env.GROQ_API_KEY ?? "";
-export const GROQ_MODEL = process.env.GROQ_MODEL ?? "llama-3.3-70b-versatile";
+// --- LLM (Anthropic Claude) ------------------------------------------------ //
+export const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY ?? "";
+export const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL ?? "claude-haiku-4-5";
 export const LLM_MAX_TOKENS = envInt("LLM_MAX_TOKENS", 512);
-export const LLM_TEMPERATURE = envFloat("LLM_TEMPERATURE", 0.7);
+// `temperature` não é enviado: Opus 4.7/4.8 rejeitam o parâmetro (400) e manter a
+// chamada sem ele a deixa portável entre os tiers (Haiku/Sonnet/Opus via ANTHROPIC_MODEL).
 
-// Economia de tokens: só as N últimas mensagens do histórico vão ao Groq.
+// Economia de tokens: só as N últimas mensagens do histórico vão ao LLM.
 export const HISTORY_LIMIT = envInt("HISTORY_LIMIT", 5);
 
 // --- Segurança / anti prompt injection ------------------------------------- //
@@ -34,9 +28,9 @@ export const HISTORY_LIMIT = envInt("HISTORY_LIMIT", 5);
 export const CHAT_MSG_MAX = envInt("CHAT_MSG_MAX", 4000);
 export const CHAT_CONTENT_MAX = envInt("CHAT_CONTENT_MAX", 4000);
 export const CHAT_HISTORY_MAX = envInt("CHAT_HISTORY_MAX", 20);
-// Classificador opcional de injeção (modelo Groq, ex.: Llama Prompt Guard /
-// Llama Guard). Vazio = DESLIGADO; só é chamado em cascata quando o heurístico
-// já suspeita. Falha do guard é fail-open (nunca bloqueia por conta própria).
+// Classificador opcional de injeção (um Claude pequeno, ex.: claude-haiku-4-5).
+// Vazio = DESLIGADO; só é chamado em cascata quando o heurístico já suspeita.
+// Falha do guard é fail-open (nunca bloqueia por conta própria).
 export const PROMPT_GUARD_MODEL = process.env.PROMPT_GUARD_MODEL ?? "";
 
 // --- Embeddings (Jina) ------------------------------------------------------ //

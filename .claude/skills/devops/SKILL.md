@@ -13,7 +13,7 @@ description: >-
 
 App **Next.js 15 (App Router) + TypeScript** empacotada com **NIXPACKS** e rodada
 no **Railway**. Dados e vetores num único **Postgres + pgvector**; LLM/embeddings
-via APIs externas (Groq/Jina). Guia operacional detalhado: `docs/DEBUG.md`.
+via APIs externas (Anthropic/Jina). Guia operacional detalhado: `docs/DEBUG.md`.
 
 ## Entrypoint e processo
 
@@ -31,11 +31,11 @@ via APIs externas (Groq/Jina). Guia operacional detalhado: `docs/DEBUG.md`.
 | Variável | Obrigatória | Default | Papel |
 |---|---|---|---|
 | `DATABASE_URL` | **Sim** | — | Postgres com pgvector (`postgresql://...`) |
-| `GROQ_API_KEY` | Sim | — | LLM (Groq) |
+| `ANTHROPIC_API_KEY` | Sim | — | LLM (Anthropic Claude) |
 | `JINA_API_KEY` | Sim (RAG) | — | Embeddings (Jina) |
 | `ADMIN_API_KEY` | **Em produção** | `admin-dev-key` | Admin de plataforma / superusuário |
-| `GROQ_MODEL` / `JINA_MODEL` | Não | llama-3.3-70b / jina-embeddings-v3 | Modelos |
-| `LLM_MAX_TOKENS` / `LLM_TEMPERATURE` | Não | `512` / `0.7` | Geração |
+| `ANTHROPIC_MODEL` / `JINA_MODEL` | Não | claude-haiku-4-5 / jina-embeddings-v3 | Modelos |
+| `LLM_MAX_TOKENS` | Não | `512` | Teto de saída (sem `temperature`: Opus 4.7/4.8 rejeitam) |
 | `HISTORY_LIMIT` / `RAG_TOP_K` | Não | `5` / `3` | Histórico ao LLM / chunks por pergunta |
 | `SEED_DEMO` | Não | `1` | `0` desliga o agente demo no seed |
 | `DEFAULT_TENANT_ID` / `LOG_LEVEL` | Não | `default` / `INFO` | Tenant padrão / log |
@@ -90,7 +90,7 @@ Celery e Redis foram removidos. PDFs são extraídos com `unpdf` (puro JS) em
 ```bash
 docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=postgres pgvector/pgvector:pg16
 npm install
-cp .env.example .env          # DATABASE_URL, GROQ_API_KEY, JINA_API_KEY, ADMIN_API_KEY
+cp .env.example .env          # DATABASE_URL, ANTHROPIC_API_KEY, JINA_API_KEY, ADMIN_API_KEY
 npm run db:setup
 npm run dev                   # painel em http://localhost:3000
 ```
@@ -100,7 +100,7 @@ Estático: `npm run typecheck` · `npm run lint` · `npm run build`.
 ## Checklist de deploy
 
 - [ ] Postgres com pgvector; `DATABASE_URL` exposta ao serviço.
-- [ ] `GROQ_API_KEY`, `JINA_API_KEY`, `ADMIN_API_KEY` definidas.
+- [ ] `ANTHROPIC_API_KEY`, `JINA_API_KEY`, `ADMIN_API_KEY` definidas.
 - [ ] Build = `npm install --include=dev && npm run build`; start roda `db:setup` antes.
 - [ ] `/health` responde `ok` e lista os tenants esperados.
 - [ ] `SEED_DEMO=0` se não quiser o agente demo.

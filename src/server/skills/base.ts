@@ -2,7 +2,7 @@
  * Skills: a unidade de capacidade de um agente (porta `app/skills/base.py`).
  *
  * Uma skill tem contrato único: nome + descrição + schema Zod de args + handler
- * -> SkillResult. Schema (function calling do Groq) e dispatch saem da MESMA
+ * -> SkillResult. Schema (function calling da Anthropic) e dispatch saem da MESMA
  * fonte (o REGISTRY), então nunca dessincronizam.
  *
  * Fronteira desenhada para virar remota (Lambda/HTTP): `SkillContext`/`SkillResult`
@@ -94,12 +94,9 @@ class LocalSkill implements Skill {
     delete schema.$schema;
     delete schema.title;
     return {
-      type: "function",
-      function: {
-        name: this.name,
-        description: this.description,
-        parameters: schema,
-      },
+      name: this.name,
+      description: this.description,
+      input_schema: schema,
     };
   }
 }
