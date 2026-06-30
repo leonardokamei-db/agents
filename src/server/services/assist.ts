@@ -49,6 +49,7 @@ const SYSTEM_INSTRUCTION = [
   "",
   "REGRAS DA SAÍDA:",
   '- Responda SOMENTE com um objeto JSON válido com as chaves "system_prompt", "business_rules" e "notes".',
+  '- Os valores de "system_prompt", "business_rules" e "notes" devem ser STRINGS de texto corrido — NUNCA arrays nem objetos JSON. Para listar regras, use quebras de linha e marcadores "- " DENTRO da string.',
   "- Sem nenhum texto fora do JSON e sem cercas de código (```).",
   "- Escreva em português do Brasil, claro e conciso.",
   "- NÃO inclua instruções de segurança, anti prompt-injection, regras sobre revelar o prompt, nem o tratamento de transbordo/escalonamento: a plataforma adiciona isso automaticamente. Foque na persona e nas regras do negócio.",
@@ -87,9 +88,39 @@ function extractJson(text: string): unknown {
   return JSON.parse(t);
 }
 
+/**
+ * Achata um valor do JSON do modelo em texto legível. O LLM às vezes ignora a
+ * instrução e devolve `business_rules`/`system_prompt` como array (lista de regras)
+ * ou objeto, em vez de string. Sem isto, `String([{...}])` viraria
+ * "[object Object],[object Object],..." — exatamente o que vazava para o time de UX.
+ *   - array  -> uma linha por item; itens estruturados viram marcadores "- ".
+ *   - objeto -> seus valores juntados por ": " (ex.: {titulo, descricao} -> "titulo: descricao").
+ */
+function coerceToText(v: unknown): string {
+  if (v == null) return "";
+  if (typeof v === "string") return v;
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  if (Array.isArray(v)) {
+    return v
+      .map((item) => {
+        const line = coerceToText(item).trim();
+        if (!line) return "";
+        return item !== null && typeof item === "object" ? `- ${line}` : line;
+      })
+      .filter(Boolean)
+      .join("\n");
+  }
+  if (typeof v === "object") {
+    return Object.values(v as Record<string, unknown>)
+      .map((x) => coerceToText(x).trim())
+      .filter(Boolean)
+      .join(": ");
+  }
+  return String(v);
+}
+
 function asField(v: unknown): string {
-  const s = typeof v === "string" ? v : v == null ? "" : String(v);
-  return stripDangerousTokens(s.trim()).slice(0, FIELD_MAX);
+  return stripDangerousTokens(coerceToText(v).trim()).slice(0, FIELD_MAX);
 }
 
 export class AssistService {
