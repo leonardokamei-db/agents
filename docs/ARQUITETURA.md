@@ -115,9 +115,15 @@ POST   /v1/tenants/{tid}/agents/{slug}/chat           (member) conversa (a "port
 *      /v1/tenants/{tid}/agents/{slug}/knowledge/...  (member) sobe/gere FAQ (RAG); 202 se enfileirado
 *      /v1/tenants/{tid}/agents/{slug}/products[/{id}](member) GET sempre; CRUD só no modo interno
 
+# Apoio aos times (UX e dados)
+GET    /v1/tenants/{tid}/skills                       (member) catálogo de skills + descrições (UX)
+POST   /v1/tenants/{tid}/assist/agent-config          (owner)  IA rascunha system_prompt + regras (UX)
+GET    /v1/tenants/{tid}/analytics?days=&agent=       (member) dashboard: transbordo/sucesso/tokens/logs (dados)
+
 # Operacional
 GET    /health                                        (público) status, modelo, celery on/off, tenants
-GET    /                                              (público) serve o client.html
+GET    /                                              (público) serve o painel admin (client.html)
+GET    /dashboard                                     (público) painel do time de dados (dados via X-API-Key)
 ```
 
 **Autenticação + RBAC** (`app/routers/deps.py`, ponto 8). Uma só função
@@ -280,6 +286,10 @@ agents(id PK = {tenant}__{slug}, tenant_id FK→tenants, slug, name, system_prom
        rag_enabled, external_products, skills, created_at)   -- UNIQUE (tenant_id, slug)
        -- skills: TEXT com lista JSON de skills habilitadas ('[]' == derivar das flags)
 products(id PK, agent_id FK→agents, name, description, price, stock, unit)
+tickets(id PK, agent_id FK→agents, title, description, user_name, user_email, criticality, created_at)
+interactions(id PK, agent_id FK→agents, tenant_id, intent, source, agent_used,
+       tokens_used, should_handoff, handoff_reason, tools_called JSONB,
+       rag_chunks_used, confidence, created_at)   -- 1 linha/mensagem; telemetria do dashboard, SEM PII
 ```
 
 Vetorial (pgvector, mesma instância):
@@ -295,7 +305,10 @@ chunks(id PK, agent_id, source_name, chunk_index, content, embedding vector(384)
 > sqlite-vec exigia. O schema é criado no boot por `scripts/setup-db.ts`
 > (`CREATE EXTENSION vector` + DDL idempotente em `src/server/db/ddl.ts`) — fonte
 > de verdade da criação de tabelas; `src/server/db/schema.ts` (Drizzle) é a fonte
-> das queries tipadas. **Greenfield:** sem migração de bancos legados.
+> das queries tipadas. Em produção (Supabase) quem cria as tabelas é
+> `supabase/schema.sql` (rodado uma vez no SQL Editor) — os **três** artefatos
+> (`ddl.ts`, `schema.ts`, `supabase/schema.sql`) descrevem as mesmas colunas e devem
+> ser mantidos em sincronia. **Greenfield:** sem migração de bancos legados.
 
 ---
 
@@ -317,6 +330,14 @@ chunks(id PK, agent_id, source_name, chunk_index, content, embedding vector(384)
   `tenant` (extraído do path) em contextvars; um filtro injeta ambos em **todo**
   `LogRecord`. Nível por `LOG_LEVEL`. Logger hierárquico `blip-agent.*`. Detalhes
   operacionais e de diagnóstico em [`DEBUG.md`](DEBUG.md).
+- **Telemetria de interações (time de dados):** além dos logs de console, cada
+  mensagem do chat grava uma linha em `interactions` (best-effort: uma falha de
+  gravação nunca derruba o chat). É a fonte do dashboard em `/dashboard` e da rota
+  `GET .../analytics` (% de transbordo, sucesso sem transbordo, tokens, intents,
+  skills, série por dia, logs recentes). **Sem PII** — só metadados. O assistente de
+  IA do time de UX (`POST .../assist/agent-config`) e o catálogo de skills
+  (`GET .../skills`) completam o apoio aos times. Guia por time em
+  [`CONFIG_AGENTE.md`](CONFIG_AGENTE.md).
 
 ---
 

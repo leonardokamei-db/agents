@@ -151,14 +151,21 @@ export class LLMClient {
     this.client = new Anthropic({ apiKey: config.ANTHROPIC_API_KEY });
   }
 
-  /** Chat completion sem ferramentas. Retorna [texto, tokens]. */
-  async complete(messages: ChatMessageParam[]): Promise<[string, number]> {
+  /**
+   * Chat completion sem ferramentas. Retorna [texto, tokens].
+   * `opts.model`/`opts.maxTokens` permitem sobrepor o modelo/teto do chat (ex.: o
+   * assistente de configuração usa um modelo mais forte e mais tokens de saída).
+   */
+  async complete(
+    messages: ChatMessageParam[],
+    opts: { model?: string; maxTokens?: number } = {},
+  ): Promise<[string, number]> {
     const { system, messages: anthMessages } = toAnthropic(messages);
     let resp: Anthropic.Message;
     try {
       resp = await this.client.messages.create({
-        model: this.model,
-        max_tokens: config.LLM_MAX_TOKENS,
+        model: opts.model ?? this.model,
+        max_tokens: opts.maxTokens ?? config.LLM_MAX_TOKENS,
         ...(system ? { system } : {}),
         messages: anthMessages,
       });

@@ -80,6 +80,13 @@ interface Member {
   name: string;
   role: string;
 }
+interface SkillCatalogItem {
+  name: string;
+  description: string;
+  category: string;
+  always_on: boolean;
+  requires: "rag" | "catalog" | null;
+}
 
 type View = "chat" | "config" | "knowledge" | "products" | "members" | "createTenant" | "createAgent";
 
@@ -100,6 +107,7 @@ export default function Panel() {
   const [toastMsg, setToastMsg] = useState<{ msg: string; error: boolean } | null>(null);
   const [tenantCreated, setTenantCreated] = useState<TenantCreated | null>(null);
   const [memberCreated, setMemberCreated] = useState<Member & { api_key: string } | null>(null);
+  const [skillCatalog, setSkillCatalog] = useState<SkillCatalogItem[]>([]);
 
   const currentTenant = tenants.find((t) => t.id === currentTenantId) ?? null;
   const current = agents.find((a) => a.id === currentAgentId) ?? null;
@@ -145,6 +153,19 @@ export default function Panel() {
     [api, toast],
   );
 
+  // Catálogo de skills (descrições) — global; busca uma vez via qualquer tenant.
+  const loadSkillCatalog = useCallback(
+    async (tenantId: string) => {
+      try {
+        const list: SkillCatalogItem[] = await api(`/v1/tenants/${tenantId}/skills`);
+        setSkillCatalog(list);
+      } catch {
+        /* sem catálogo: a UI cai no fallback só-nomes */
+      }
+    },
+    [api],
+  );
+
   const selectTenant = useCallback(
     async (id: string) => {
       setCurrentTenantId(id || null);
@@ -165,12 +186,15 @@ export default function Panel() {
         const ts: TenantPublic[] = await api("/v1/tenants");
         setTenants(ts);
         toast(`${ts.length} tenant(s) carregado(s).`);
-        if (ts.length) await selectTenant(ts[0].id);
+        if (ts.length) {
+          await selectTenant(ts[0].id);
+          void loadSkillCatalog(ts[0].id);
+        }
       } catch (e) {
         toast("Falha ao conectar: " + (e as Error).message, true);
       }
     },
-    [api, toast, selectTenant],
+    [api, toast, selectTenant, loadSkillCatalog],
   );
 
   useEffect(() => {
@@ -508,6 +532,9 @@ export default function Panel() {
         <button className="btn small" onClick={() => connect(adminKey.trim())}>
           Conectar
         </button>
+        <a className="btn small secondary" href="/dashboard" style={{ textDecoration: "none" }}>
+          📊 Dashboard
+        </a>
       </header>
 
       <div className="layout">
@@ -652,17 +679,26 @@ export default function Panel() {
                   <div className="row2">
                     <div>
                       <label>Nome *</label>
-                      <input name="name" placeholder="Minha Loja" required />
+                      <input id="new_name" name="name" placeholder="Minha Loja" required />
                     </div>
                     <div>
                       <label>Slug (opcional)</label>
                       <input name="slug" placeholder="minha-loja" />
                     </div>
                   </div>
+                  <AssistBox
+                    tenantId={tid()}
+                    api={api}
+                    apiKey={chatKey()}
+                    toast={toast}
+                    nameId="new_name"
+                    targetSystemId="new_system_prompt"
+                    targetRulesId="new_business_rules"
+                  />
                   <label>System prompt (vazio = padrão compacto)</label>
-                  <textarea name="system_prompt" placeholder="Você é o assistente virtual de..." />
+                  <textarea id="new_system_prompt" name="system_prompt" placeholder="Você é o assistente virtual de..." />
                   <label>Regras de negócio</label>
-                  <textarea name="business_rules" placeholder="Troca em até 7 dias, reembolso se atraso > 7 dias..." />
+                  <textarea id="new_business_rules" name="business_rules" placeholder="Troca em até 7 dias, reembolso se atraso > 7 dias..." />
                   <div className="row2">
                     <div>
                       <label>Máx. de turnos antes do handoff</label>
@@ -698,7 +734,7 @@ export default function Panel() {
                     </div>
                   </div>
                   <label>Skills</label>
-                  <SkillsCheckboxes />
+                  <SkillsCheckboxes catalog={skillCatalog} />
                   <button className="btn" type="submit">
                     Criar agente
                   </button>
@@ -755,11 +791,21 @@ export default function Panel() {
                 </p>
                 <form key={current.id} onSubmit={saveConfig}>
                   <label>Nome</label>
-                  <input name="name" defaultValue={current.name} />
+                  <input id="cfg_name" name="name" defaultValue={current.name} />
+                  <AssistBox
+                    tenantId={tid()}
+                    api={api}
+                    apiKey={chatKey()}
+                    toast={toast}
+                    nameId="cfg_name"
+                    targetSystemId="cfg_system_prompt"
+                    targetRulesId="cfg_business_rules"
+                    defaultName={current.name}
+                  />
                   <label>System prompt (vazio = padrão compacto)</label>
-                  <textarea name="system_prompt" defaultValue={current.system_prompt} />
+                  <textarea id="cfg_system_prompt" name="system_prompt" defaultValue={current.system_prompt} />
                   <label>Regras de negócio</label>
-                  <textarea name="business_rules" defaultValue={current.business_rules} />
+                  <textarea id="cfg_business_rules" name="business_rules" defaultValue={current.business_rules} />
                   <div className="row2">
                     <div>
                       <label>Máx. de turnos</label>
@@ -795,7 +841,7 @@ export default function Panel() {
                     </div>
                   </div>
                   <label>Skills</label>
-                  <SkillsCheckboxes active={current.skills} />
+                  <SkillsCheckboxes active={current.skills} catalog={skillCatalog} />
                   <button className="btn" type="submit">
                     Salvar e sincronizar
                   </button>
@@ -1061,14 +1107,131 @@ function InternalProductRow({
   );
 }
 
-function SkillsCheckboxes({ active }: { active?: string[] }) {
+interface AssistDraft {
+  system_prompt: string;
+  business_rules: string;
+  notes: string;
+  tokens_used: number;
+}
+
+/**
+ * Caixa "Gerar com IA": o time de UX descreve um briefing e a IA rascunha o system
+ * prompt e as regras de negócio, preenchendo os <textarea> do formulário (lidos por
+ * id). É só sugestão — o formulário ainda precisa ser salvo (sanitiza ao persistir).
+ */
+function AssistBox({
+  tenantId,
+  api,
+  apiKey,
+  toast,
+  targetSystemId,
+  targetRulesId,
+  nameId,
+  defaultName,
+}: {
+  tenantId: string | null;
+  api: (path: string, opts?: RequestInit, apiKey?: string | null) => Promise<AssistDraft>;
+  apiKey: string | null;
+  toast: (msg: string, error?: boolean) => void;
+  targetSystemId: string;
+  targetRulesId: string;
+  nameId?: string;
+  defaultName?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [brief, setBrief] = useState("");
+  const [tone, setTone] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [notes, setNotes] = useState("");
+
+  async function generate() {
+    if (!tenantId) return toast("Selecione um tenant primeiro.", true);
+    if (!brief.trim()) return toast("Descreva o briefing para a IA.", true);
+    setLoading(true);
+    setNotes("");
+    try {
+      const sysEl = document.getElementById(targetSystemId) as HTMLTextAreaElement | null;
+      const rulesEl = document.getElementById(targetRulesId) as HTMLTextAreaElement | null;
+      const nameEl = nameId ? (document.getElementById(nameId) as HTMLInputElement | null) : null;
+      const agentName = (nameEl?.value || defaultName || "").trim();
+      const skills = Array.from(
+        document.querySelectorAll<HTMLInputElement>('input[name="skills"]:checked'),
+      ).map((el) => el.value);
+      const body: Record<string, unknown> = { brief: brief.trim(), skills };
+      if (agentName) body.agent_name = agentName;
+      if (tone.trim()) body.tone = tone.trim();
+      if (sysEl?.value.trim()) body.current_system_prompt = sysEl.value;
+      if (rulesEl?.value.trim()) body.current_business_rules = rulesEl.value;
+      const r = await api(
+        `/v1/tenants/${tenantId}/assist/agent-config`,
+        { method: "POST", body: JSON.stringify(body) },
+        apiKey,
+      );
+      if (sysEl && r.system_prompt) sysEl.value = r.system_prompt;
+      if (rulesEl && r.business_rules) rulesEl.value = r.business_rules;
+      setNotes(r.notes || "");
+      toast(`Sugestão gerada (${r.tokens_used} tokens). Revise e salve.`);
+    } catch (e) {
+      toast((e as Error).message, true);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
-    <div className="skills-grid">
-      {SKILLS_LIST.map((s) => (
-        <div key={s} className="check">
-          <input type="checkbox" name="skills" value={s} id={`skill-${s}`} defaultChecked={active ? active.includes(s) : false} />
-          <label htmlFor={`skill-${s}`}>{s}</label>
+    <div className="assist">
+      <button type="button" className="assist-toggle" onClick={() => setOpen((o) => !o)}>
+        ✨ Gerar com IA {open ? "▲" : "▼"}
+      </button>
+      {open && (
+        <div className="assist-body">
+          <label>Briefing — o que o agente faz, para quem, políticas, tom...</label>
+          <textarea
+            value={brief}
+            onChange={(e) => setBrief(e.target.value)}
+            placeholder="Ex.: Assistente de uma loja de roupas. Tira dúvidas sobre trocas (até 7 dias), prazos de entrega e formas de pagamento. Abre chamado quando há defeito. Tom acolhedor e objetivo."
+          />
+          <label>Tom (opcional)</label>
+          <input value={tone} onChange={(e) => setTone(e.target.value)} placeholder="cordial e objetivo" />
+          <button type="button" className="btn small" onClick={generate} disabled={loading}>
+            {loading ? "Gerando..." : "Gerar e preencher campos"}
+          </button>
+          <span className="assist-hint">A IA preenche os campos abaixo — revise antes de salvar.</span>
+          {notes && (
+            <div className="assist-notes">
+              <b>Observações da IA:</b> {notes}
+            </div>
+          )}
         </div>
+      )}
+    </div>
+  );
+}
+
+function SkillsCheckboxes({ active, catalog }: { active?: string[]; catalog?: SkillCatalogItem[] }) {
+  const items: SkillCatalogItem[] =
+    catalog && catalog.length > 0
+      ? catalog
+      : SKILLS_LIST.map((name) => ({ name, description: "", category: "", always_on: false, requires: null }));
+  return (
+    <div className="skills-list">
+      {items.map((s) => (
+        <label key={s.name} className="skill-item">
+          <input
+            type="checkbox"
+            name="skills"
+            value={s.name}
+            defaultChecked={active ? active.includes(s.name) : false}
+          />
+          <div className="skill-body">
+            <div className="skill-name">
+              <code>{s.name}</code>
+              {s.requires === "rag" && <span className="req">requer RAG</span>}
+              {s.requires === "catalog" && <span className="req">requer catálogo</span>}
+            </div>
+            {s.description && <div className="skill-desc">{s.description}</div>}
+          </div>
+        </label>
       ))}
     </div>
   );

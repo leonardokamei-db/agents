@@ -72,3 +72,54 @@ td input { padding: 4px 6px; font-size: 13px; }
 .empty { color: var(--muted); font-size: 14px; padding: 30px; text-align: center; }
 .hidden { display: none !important; }
 code.key { background: var(--panel2); padding: 2px 6px; border-radius: 4px; font-size: 12px; word-break: break-all; }
+
+/* ---- Dashboard (time de dados) ---- */
+.dash { flex: 1; overflow-y: auto; padding: 20px; }
+.controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin-bottom: 18px; }
+.controls .field { display: flex; flex-direction: column; gap: 0; }
+.controls .field label { margin: 0 0 4px; }
+.controls input, .controls select { width: auto; min-width: 150px; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 18px; }
+.kpi { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
+.kpi .num { font-size: 26px; font-weight: 700; }
+.kpi .lbl { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.kpi.ok .num { color: var(--ok); }
+.kpi.warn .num { color: var(--warn); }
+.kpi.accent .num { color: var(--accent); }
+.charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; margin-bottom: 18px; }
+.chart-card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; }
+.chart-card h3 { font-size: 13px; font-weight: 600; margin-bottom: 12px; color: var(--text); }
+.bar-row { display: grid; grid-template-columns: 120px 1fr 52px; align-items: center; gap: 8px; margin-bottom: 7px; font-size: 12px; }
+.bar-label { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar-track { background: var(--panel2); border-radius: 4px; height: 14px; overflow: hidden; }
+.bar-fill { height: 100%; background: var(--accent); border-radius: 4px; min-width: 2px; }
+.bar-fill.warn { background: var(--warn); }
+.bar-val { text-align: right; color: var(--text); font-variant-numeric: tabular-nums; }
+.day-chart { display: flex; align-items: flex-end; gap: 3px; height: 130px; padding-top: 6px; }
+.day-col { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 2px; min-width: 0; }
+.day-col .stack { width: 100%; display: flex; flex-direction: column; justify-content: flex-end; height: 100%; }
+.day-col .seg-ok { background: var(--accent); border-radius: 3px 3px 0 0; min-height: 1px; }
+.day-col .seg-ho { background: var(--warn); min-height: 0; }
+.day-col .tick { font-size: 9px; color: var(--muted); white-space: nowrap; }
+.legend { display: flex; gap: 14px; font-size: 11px; color: var(--muted); margin-top: 10px; }
+.legend span { display: inline-flex; align-items: center; gap: 5px; }
+.legend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.pill { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 99px; background: var(--panel2); border: 1px solid var(--border); }
+.pill.ho { border-color: var(--warn); color: var(--warn); }
+
+/* ---- Skills com descrição (ajuda do time de UX) ---- */
+.skills-list { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.skill-item { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
+.skill-item input { width: auto; margin-top: 2px; }
+.skill-body { min-width: 0; }
+.skill-name { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.skill-name code { background: var(--bg); padding: 1px 6px; border-radius: 4px; font-size: 12px; }
+.skill-desc { font-size: 12px; color: var(--muted); margin-top: 3px; line-height: 1.4; }
+.req { font-size: 10px; color: var(--warn); border: 1px solid var(--warn); border-radius: 99px; padding: 0 6px; }
+
+/* ---- Caixa "Gerar com IA" ---- */
+.assist { margin-top: 12px; border: 1px dashed var(--accent); border-radius: 8px; }
+.assist-toggle { width: 100%; text-align: left; background: var(--panel2); color: var(--accent); border: none; padding: 9px 12px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600; }
+.assist-body { padding: 4px 12px 14px; }
+.assist-hint { font-size: 11px; color: var(--muted); margin-left: 10px; }
+.assist-notes { margin-top: 10px; font-size: 12px; color: var(--text); background: var(--panel2); border-left: 3px solid var(--accent); border-radius: 4px; padding: 8px 10px; }

@@ -71,6 +71,27 @@ create table if not exists tickets (
 
 create index if not exists tickets_agent_idx on tickets (agent_id);
 
+-- Telemetria de interações do chat (alimenta o dashboard do time de dados).
+-- Sem PII: só metadados (intent, source, tokens, transbordo, tools...).
+create table if not exists interactions (
+    id              serial primary key,
+    agent_id        text not null references agents(id) on delete cascade,
+    tenant_id       text not null,
+    intent          text not null default '',
+    source          text not null default '',
+    agent_used      text not null default '',
+    tokens_used     integer not null default 0,
+    should_handoff  boolean not null default false,
+    handoff_reason  text not null default '',
+    tools_called    jsonb not null default '[]'::jsonb,
+    rag_chunks_used integer not null default 0,
+    confidence      real not null default 0,
+    created_at      timestamptz not null default now()
+);
+
+create index if not exists interactions_tenant_idx on interactions (tenant_id, created_at);
+create index if not exists interactions_agent_idx on interactions (agent_id, created_at);
+
 create table if not exists chunks (
     id           serial primary key,
     agent_id     text not null,

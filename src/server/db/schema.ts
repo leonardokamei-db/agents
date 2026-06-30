@@ -109,6 +109,30 @@ export const tickets = pgTable("tickets", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// Telemetria de interações: UMA linha por mensagem processada no chat. Alimenta o
+// dashboard do time de dados (% de transbordo, sucesso sem transbordo, tokens...).
+// Escopada por agente (agent_id) E por tenant (tenant_id, desnormalizado para
+// agregações por tenant sem join) — mesma invariante de isolamento dos produtos.
+// PRIVACIDADE: NÃO guarda o texto da mensagem nem da resposta (sem PII) — só os
+// metadados telemétricos que o Orchestrator já produz. Índices criados no ddl.ts.
+export const interactions = pgTable("interactions", {
+  id: serial("id").primaryKey(),
+  agentId: text("agent_id")
+    .notNull()
+    .references(() => agents.id, { onDelete: "cascade" }),
+  tenantId: text("tenant_id").notNull(),
+  intent: text("intent").notNull().default(""),
+  source: text("source").notNull().default(""),
+  agentUsed: text("agent_used").notNull().default(""),
+  tokensUsed: integer("tokens_used").notNull().default(0),
+  shouldHandoff: boolean("should_handoff").notNull().default(false),
+  handoffReason: text("handoff_reason").notNull().default(""),
+  toolsCalled: jsonb("tools_called").$type<string[]>().notNull().default([]),
+  ragChunksUsed: integer("rag_chunks_used").notNull().default(0),
+  confidence: real("confidence").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // Vector store RAG (antes rag.db/sqlite-vec). Uma só tabela com a coluna
 // `embedding vector(384)`; a busca KNN filtra por agent_id no WHERE (pgvector),
 // eliminando o over-fetch x3 que o sqlite-vec exigia. Sem FK de propósito: a

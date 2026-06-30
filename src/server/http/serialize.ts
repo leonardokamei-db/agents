@@ -5,7 +5,10 @@
 
 import type { AgentConfig, ProductRow, Tenant, User } from "../domain";
 import type { ProcessResult } from "../orchestrator";
+import type { Dashboard } from "../services/analytics";
+import type { AssistConfigResult } from "../services/assist";
 import type { MemberCreatedView, MemberView } from "../services/tenants";
+import type { SkillInfo } from "../skills";
 
 export function agentPublic(a: AgentConfig) {
   return {
@@ -57,6 +60,69 @@ export function productInfo(p: ProductRow) {
     price: p.price,
     stock: p.stock,
     unit: p.unit,
+  };
+}
+
+/** Catálogo de skills (descrições) — para o time de UX montar a config. */
+export function skillInfo(s: SkillInfo) {
+  return {
+    name: s.name,
+    description: s.description,
+    category: s.category,
+    always_on: s.alwaysOn,
+    requires: s.requires,
+  };
+}
+
+/** Rascunho de configuração gerado pela IA (assistente do time de UX). */
+export function assistConfig(r: AssistConfigResult) {
+  return {
+    system_prompt: r.systemPrompt,
+    business_rules: r.businessRules,
+    notes: r.notes,
+    tokens_used: r.tokensUsed,
+  };
+}
+
+/** Dashboard do time de dados (métricas de transbordo, tokens, intents, logs). */
+export function dashboardPublic(d: Dashboard) {
+  return {
+    range: { days: d.range.days, since: d.range.since, agent_slug: d.range.agentSlug },
+    summary: {
+      total: d.summary.total,
+      handoff_count: d.summary.handoffCount,
+      success_no_handoff: d.summary.successNoHandoff,
+      handoff_rate: d.summary.handoffRate,
+      success_rate: d.summary.successRate,
+      tokens_total: d.summary.tokensTotal,
+      tokens_avg: d.summary.tokensAvg,
+    },
+    by_day: d.byDay.map((p) => ({ day: p.day, count: p.count, handoffs: p.handoffs, tokens: p.tokens })),
+    by_intent: d.byIntent.map((p) => ({ label: p.label, count: p.count })),
+    by_source: d.bySource.map((p) => ({ label: p.label, count: p.count })),
+    by_agent: d.byAgent.map((a) => ({
+      slug: a.slug,
+      agent_id: a.agentId,
+      count: a.count,
+      handoffs: a.handoffs,
+      tokens: a.tokens,
+    })),
+    top_tools: d.topTools.map((p) => ({ label: p.label, count: p.count })),
+    recent: d.recent.map((r) => ({
+      id: r.id,
+      slug: r.slug,
+      agent_id: r.agentId,
+      intent: r.intent,
+      source: r.source,
+      agent_used: r.agentUsed,
+      tokens_used: r.tokensUsed,
+      should_handoff: r.shouldHandoff,
+      handoff_reason: r.handoffReason,
+      tools_called: r.toolsCalled,
+      rag_chunks_used: r.ragChunksUsed,
+      confidence: r.confidence,
+      created_at: r.createdAt,
+    })),
   };
 }
 

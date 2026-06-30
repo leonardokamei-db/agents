@@ -129,6 +129,27 @@ export function allSkillNames(): string[] {
   return [...REGISTRY.keys()];
 }
 
+/** Metadado de uma skill para a UI (time de UX): nome, descrição e dependências. */
+export interface SkillInfo {
+  name: string;
+  description: string; // a MESMA descrição que o LLM lê para decidir chamar a skill
+  category: string;
+  alwaysOn: boolean; // suporte/geral: disponível para qualquer agente
+  requires: "rag" | "catalog" | null; // flag que precisa estar ligada p/ a skill valer
+}
+
+/** Catálogo de skills disponíveis (lido pela rota GET .../skills). */
+export function skillsCatalog(): SkillInfo[] {
+  return [...REGISTRY.values()].map((sk) => ({
+    name: sk.name,
+    description: sk.description,
+    category: sk.category,
+    alwaysOn: sk.category === CATEGORY_SUPPORT || sk.category === CATEGORY_GENERAL,
+    requires:
+      sk.category === CATEGORY_KNOWLEDGE ? "rag" : sk.category === CATEGORY_CATALOG ? "catalog" : null,
+  }));
+}
+
 /** Schemas (function calling) das skills habilitadas, na ordem dada. */
 export function toolSchemasFor(names: string[]): ChatTool[] {
   return names.filter((n) => REGISTRY.has(n)).map((n) => REGISTRY.get(n)!.toToolSchema());

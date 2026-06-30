@@ -119,6 +119,19 @@ export interface TicketCreateInput {
   criticality: TicketCriticality;
 }
 
+/** Telemetria de UMA interação do chat, pronta para persistir (sem PII). */
+export interface InteractionInput {
+  intent: string;
+  source: string;
+  agentUsed: string;
+  tokensUsed: number;
+  shouldHandoff: boolean;
+  handoffReason: string;
+  toolsCalled: string[];
+  ragChunksUsed: number;
+  confidence: number;
+}
+
 /** Saída padronizada de qualquer agente. */
 export interface AgentResult {
   response: string;

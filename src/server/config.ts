@@ -23,6 +23,14 @@ export const LLM_MAX_TOKENS = envInt("LLM_MAX_TOKENS", 512);
 // Economia de tokens: só as N últimas mensagens do histórico vão ao LLM.
 export const HISTORY_LIMIT = envInt("HISTORY_LIMIT", 5);
 
+// --- Assistente de configuração (time de UX) -------------------------------- //
+// Gera system_prompt + regras de negócio a partir de um briefing. NÃO é o caminho
+// de chat (sem economia agressiva de token); pode usar um modelo mais forte que o
+// do chat. Default = ANTHROPIC_MODEL. Teto de saída maior (texto longo).
+export const ASSIST_MODEL = process.env.ASSIST_MODEL || ANTHROPIC_MODEL;
+export const ASSIST_MAX_TOKENS = envInt("ASSIST_MAX_TOKENS", 2000);
+export const ASSIST_BRIEF_MAX = envInt("ASSIST_BRIEF_MAX", 4000);
+
 // --- Segurança / anti prompt injection ------------------------------------- //
 // Limites de entrada do chat (corta payload gigante: token-flooding/custo).
 export const CHAT_MSG_MAX = envInt("CHAT_MSG_MAX", 4000);

@@ -79,6 +79,26 @@ CREATE TABLE IF NOT EXISTS tickets (
 
 CREATE INDEX IF NOT EXISTS tickets_agent_idx ON tickets (agent_id);
 
+CREATE TABLE IF NOT EXISTS interactions (
+    id              SERIAL PRIMARY KEY,
+    agent_id        TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+    tenant_id       TEXT NOT NULL,
+    intent          TEXT NOT NULL DEFAULT '',
+    source          TEXT NOT NULL DEFAULT '',
+    agent_used      TEXT NOT NULL DEFAULT '',
+    tokens_used     INTEGER NOT NULL DEFAULT 0,
+    should_handoff  BOOLEAN NOT NULL DEFAULT false,
+    handoff_reason  TEXT NOT NULL DEFAULT '',
+    tools_called    JSONB NOT NULL DEFAULT '[]'::jsonb,
+    rag_chunks_used INTEGER NOT NULL DEFAULT 0,
+    confidence      REAL NOT NULL DEFAULT 0,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Dashboard de dados: consultas por tenant e por agente, sempre numa janela de tempo.
+CREATE INDEX IF NOT EXISTS interactions_tenant_idx ON interactions (tenant_id, created_at);
+CREATE INDEX IF NOT EXISTS interactions_agent_idx ON interactions (agent_id, created_at);
+
 CREATE TABLE IF NOT EXISTS chunks (
     id           SERIAL PRIMARY KEY,
     agent_id     TEXT NOT NULL,

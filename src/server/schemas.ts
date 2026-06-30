@@ -128,6 +128,30 @@ export function toAgentUpdate(i: AgentUpdateInput): AgentUpdateData {
   return out;
 }
 
+// --- Assistente de configuração (IA) ---------------------------------------- //
+// Briefing do time de UX -> rascunho de system_prompt + business_rules. Limites de
+// tamanho barram payload gigante; `current_*` permitem refinar uma config existente.
+export const assistConfigSchema = z.object({
+  brief: z.string().min(1).max(config.ASSIST_BRIEF_MAX),
+  agent_name: z.string().max(120).optional(),
+  tone: z.string().max(200).optional(),
+  skills: z.array(z.string()).max(50).default([]),
+  current_system_prompt: z.string().max(8000).optional(),
+  current_business_rules: z.string().max(8000).optional(),
+});
+export type AssistConfigBody = z.infer<typeof assistConfigSchema>;
+
+export function toAssistConfig(i: AssistConfigBody) {
+  return {
+    brief: i.brief,
+    agentName: i.agent_name,
+    tone: i.tone,
+    skills: i.skills,
+    currentSystemPrompt: i.current_system_prompt,
+    currentBusinessRules: i.current_business_rules,
+  };
+}
+
 // --- Produtos --------------------------------------------------------------- //
 export const productCreateSchema = z.object({
   name: z.string(),
