@@ -16,6 +16,11 @@ export const FALLBACK_HANDOFF =
 export const ERROR_INTERNAL =
   "Desculpe, ocorreu um erro. Vou transferir você para um atendente.";
 
+// Encerramento do atendimento (skill finalizar_atendimento) — despedida cordial.
+export const ATENDIMENTO_FINALIZADO =
+  "Fico feliz em ter ajudado! Se precisar de mais alguma coisa, é só chamar. " +
+  "Tenha um ótimo dia!";
+
 // Escalonamento determinístico de suporte (palavra-chave forte).
 export const ESCALATION_SUPPORT =
   "Entendo que isso é importante e quero garantir que seja resolvido da melhor " +

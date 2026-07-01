@@ -132,6 +132,30 @@ export interface InteractionInput {
   confidence: number;
 }
 
+/**
+ * Tipo de um trigger — evento acionável que a resposta do chat carrega para o
+ * canal integrador reagir (ex.: transferir para uma fila humana, notificar que um
+ * chamado foi aberto, encerrar a conversa). Enum fechado: o contrato é estável e o
+ * consumidor pode dar `switch` exaustivo.
+ */
+export type TriggerType = "transbordo" | "chamado_criado" | "atendimento_finalizado";
+
+/**
+ * Um evento acionável emitido junto da resposta. `type` diz O QUE aconteceu;
+ * `reason` é um motivo legível (opcional); `data` carrega payload estruturado do
+ * evento (ex.: `{ ticket_id, criticality }` no `chamado_criado`). Serializável.
+ */
+export interface Trigger {
+  type: TriggerType;
+  reason: string | null;
+  data: Record<string, unknown>;
+}
+
+/** Constrói um Trigger preenchendo os defaults. */
+export function trigger(type: TriggerType, reason: string | null = null, data: Record<string, unknown> = {}): Trigger {
+  return { type, reason, data };
+}
+
 /** Saída padronizada de qualquer agente. */
 export interface AgentResult {
   response: string;
@@ -142,6 +166,8 @@ export interface AgentResult {
   toolsCalled: string[];
   ragChunksUsed: number;
   ragSources: string[];
+  /** Eventos acionáveis emitidos pelas skills durante o turno (ver Trigger). */
+  triggers: Trigger[];
 }
 
 /** Constrói um AgentResult preenchendo os defaults. */
@@ -155,5 +181,6 @@ export function agentResult(partial: Partial<AgentResult> & { response: string }
     toolsCalled: partial.toolsCalled ?? [],
     ragChunksUsed: partial.ragChunksUsed ?? 0,
     ragSources: partial.ragSources ?? [],
+    triggers: partial.triggers ?? [],
   };
 }

@@ -13,7 +13,7 @@
 import type { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 
-import type { AgentConfig } from "../domain";
+import type { AgentConfig, Trigger } from "../domain";
 import { getLogger } from "../logging";
 import type { ChatTool } from "../llm";
 
@@ -38,6 +38,8 @@ export class SkillResult {
   /** Resposta determinística pronta -> skill terminal (atalhos de 0 token). */
   directResponse: string | null;
   sources: string[];
+  /** Eventos acionáveis emitidos pela skill (ex.: chamado_criado). Ver Trigger. */
+  triggers: Trigger[];
 
   constructor(init: {
     data?: unknown;
@@ -45,12 +47,14 @@ export class SkillResult {
     handoffReason?: string | null;
     directResponse?: string | null;
     sources?: string[];
+    triggers?: Trigger[];
   }) {
     this.data = init.data ?? null;
     this.handoff = init.handoff ?? false;
     this.handoffReason = init.handoffReason ?? null;
     this.directResponse = init.directResponse ?? null;
     this.sources = init.sources ?? [];
+    this.triggers = init.triggers ?? [];
   }
 
   /** Serializa `data` para devolver ao LLM como resultado da tool. */

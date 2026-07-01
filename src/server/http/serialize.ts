@@ -139,5 +139,6 @@ export function chatResponse(r: ProcessResult) {
     tools_called: r.toolsCalled,
     rag_chunks_used: r.ragChunksUsed,
     rag_sources: r.ragSources,
+    triggers: r.triggers.map((t) => ({ type: t.type, reason: t.reason, data: t.data })),
   };
 }

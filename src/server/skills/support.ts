@@ -6,8 +6,9 @@
 
 import { z } from "zod";
 
+import { trigger } from "../domain";
 import { getLogger } from "../logging";
-import { ESCALATION_SUPPORT } from "../messages";
+import { ATENDIMENTO_FINALIZADO, ESCALATION_SUPPORT } from "../messages";
 import * as tickets from "../tickets";
 import { CATEGORY_SUPPORT, registerLocal, SkillResult } from "./base";
 
@@ -111,6 +112,17 @@ registerLocal(
           created_at: ticket.createdAt,
           message: `Chamado #${ticket.id} registrado com criticidade ${ticket.criticality}.`,
         },
+        // Evento acionável: o canal integrador pode notificar/roteirizar o chamado.
+        triggers: [
+          trigger("chamado_criado", `Chamado #${ticket.id} aberto.`, {
+            ticket_id: ticket.id,
+            title: ticket.title,
+            criticality: ticket.criticality,
+            user_name: ticket.userName,
+            user_email: ticket.userEmail,
+            created_at: ticket.createdAt,
+          }),
+        ],
       });
     } catch (e) {
       // Falha de banco NÃO derruba o turno em handoff: devolve erro como dado para
@@ -121,5 +133,33 @@ registerLocal(
       });
     }
   },
+  CATEGORY_SUPPORT,
+);
+
+// --- Encerramento do atendimento ------------------------------------------- //
+
+// Skill TERMINAL (tem directResponse): ao ser chamada, o agente devolve a
+// despedida e encerra o turno. Diferente de escalate_to_human, NÃO faz handoff —
+// o atendimento terminou resolvido, sem transferir para humano.
+const finalizeArgs = z.object({
+  reason: z
+    .string()
+    .default("")
+    .describe("Motivo breve do encerramento (ex.: 'dúvida resolvida', 'cliente se despediu')."),
+});
+
+registerLocal(
+  "finalizar_atendimento",
+  "Encerra o atendimento quando a solicitação do cliente já foi resolvida e não há mais " +
+    "nada a fazer (ex.: o cliente agradece, se despede ou confirma que está tudo certo). " +
+    "Emite o evento de atendimento finalizado. NÃO use se o cliente ainda precisa de algo " +
+    "ou se o caso exige um atendente humano (para isso use escalate_to_human).",
+  finalizeArgs,
+  (_ctx, args) =>
+    new SkillResult({
+      data: { finalized: true, reason: args.reason },
+      directResponse: ATENDIMENTO_FINALIZADO,
+      triggers: [trigger("atendimento_finalizado", args.reason || null)],
+    }),
   CATEGORY_SUPPORT,
 );

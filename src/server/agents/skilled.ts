@@ -7,7 +7,7 @@
  * Caso geral: loop de function-calling com teto e retries para tool_use_failed.
  */
 
-import { agentResult, type AgentConfig, type AgentResult, type ChatMessage } from "../domain";
+import { agentResult, type AgentConfig, type AgentResult, type ChatMessage, type Trigger } from "../domain";
 import { getLogger } from "../logging";
 import { type ChatCompletion, type ChatMessageParam, type ChatTool, type LLMClient, type ToolCall, type ToolResult, ToolUseFailedError, tokensOf } from "../llm";
 import { DEGRADED_CATALOG, ORDER_CONFIRMED } from "../messages";
@@ -31,6 +31,7 @@ interface LoopState {
   ragChunks: number;
   pendingHandoff: boolean;
   handoffReason: string | null;
+  triggers: Trigger[];
 }
 
 interface KnowledgeData {
@@ -68,6 +69,7 @@ export class SkilledAgent extends BaseAgent {
         shouldHandoff: true,
         handoffReason: res.handoffReason,
         source: "support_escalation",
+        triggers: res.triggers,
       });
     }
 
@@ -87,6 +89,7 @@ export class SkilledAgent extends BaseAgent {
       ragChunks: 0,
       pendingHandoff: false,
       handoffReason: null,
+      triggers: [],
     };
 
     // Sem tools (caso raro): chat simples + parse de handoff pelo token.
@@ -159,19 +162,22 @@ export class SkilledAgent extends BaseAgent {
         state.ragChunks += ((res.data as KnowledgeData | null)?.results ?? []).length;
       }
       if (res.sources.length > 0) state.sources.push(...res.sources);
+      if (res.triggers.length > 0) state.triggers.push(...res.triggers);
 
+      // `directResponse` marca uma skill TERMINAL (escalate_to_human,
+      // finalizar_atendimento): encerra o turno já, com ou sem handoff.
+      if (res.directResponse !== null) {
+        return agentResult({
+          response: res.directResponse,
+          shouldHandoff: res.handoff,
+          handoffReason: res.handoffReason,
+          source: name === "escalate_to_human" ? "support_escalation" : this.source,
+          tokensUsed: state.tokensUsed,
+          toolsCalled: state.toolsCalled,
+          triggers: state.triggers,
+        });
+      }
       if (res.handoff) {
-        if (res.directResponse) {
-          // skill terminal -> encerra o turno já (sem continuar a conversa)
-          return agentResult({
-            response: res.directResponse,
-            shouldHandoff: true,
-            handoffReason: res.handoffReason,
-            source: name === "escalate_to_human" ? "support_escalation" : this.source,
-            tokensUsed: state.tokensUsed,
-            toolsCalled: state.toolsCalled,
-          });
-        }
         state.pendingHandoff = true;
         state.handoffReason = res.handoffReason;
       }
@@ -238,6 +244,7 @@ export class SkilledAgent extends BaseAgent {
       toolsCalled: state.toolsCalled,
       ragChunksUsed: state.ragChunks,
       ragSources: [...new Set(state.sources)].sort(),
+      triggers: state.triggers,
     });
   }
 }

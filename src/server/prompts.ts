@@ -75,6 +75,12 @@ export function skilledPrompt(
   if (has.has("escalate_to_human")) {
     rules.push("se precisar de uma pessoa, use escalate_to_human");
   }
+  if (has.has("finalizar_atendimento")) {
+    rules.push(
+      "quando a solicitação já estiver resolvida e o cliente se despedir ou agradecer, " +
+        "use finalizar_atendimento para encerrar",
+    );
+  }
   if (has.has("create_ticket")) {
     rules.push(
       "para abrir um chamado use create_ticket, mas SOMENTE depois de ter o nome E o e-mail " +

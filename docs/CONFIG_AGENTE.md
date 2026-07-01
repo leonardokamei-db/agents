@@ -80,6 +80,33 @@ curl -sS -X POST "$BASE/v1/tenants/$TENANT/agents/$SLUG/chat" \
   -d '{"message": "Vocês fazem troca?", "history": []}'
 ```
 
+A resposta traz o texto + metadados + **`triggers`**: eventos acionáveis para o
+canal integrador reagir sem interpretar o texto livre. Cada trigger tem
+`type` ∈ `{ "transbordo", "chamado_criado", "atendimento_finalizado" }`, um
+`reason` legível e um `data` estruturado (payload do evento).
+
+```jsonc
+{
+  "response": "Vou registrar seu chamado...",
+  "should_handoff": false,
+  "handoff_reason": null,
+  "intent": "support",
+  "source": "llm",
+  "tools_called": ["create_ticket"],
+  "triggers": [
+    { "type": "chamado_criado",
+      "reason": "Chamado #42 aberto.",
+      "data": { "ticket_id": 42, "criticality": "alta", "user_name": "...", "user_email": "...", "created_at": "..." } }
+  ]
+}
+```
+
+- `transbordo` — derivado de `should_handoff`: sai em qualquer transbordo
+  (escalonamento, limite de turnos, erro). `data` vazio; use `reason`.
+- `chamado_criado` — a skill `create_ticket` abriu um chamado (`data` traz o ticket).
+- `atendimento_finalizado` — a skill `finalizar_atendimento` encerrou o atendimento
+  resolvido (sem transbordo).
+
 ---
 
 ## 2) Time de UX — assistente de IA + descrição das skills

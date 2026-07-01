@@ -13,7 +13,7 @@
 
 import { FallbackAgent, SkilledAgent } from "./agents";
 import { HISTORY_LIMIT, PROMPT_GUARD_MODEL } from "./config";
-import type { AgentConfig, AgentResult, ChatMessage } from "./domain";
+import { type AgentConfig, type AgentResult, type ChatMessage, type Trigger, trigger } from "./domain";
 import type { LLMClient } from "./llm";
 import { getLogger } from "./logging";
 import { ERROR_INTERNAL, injectionRefusal } from "./messages";
@@ -35,6 +35,23 @@ export interface ProcessResult {
   intent: string;
   agentUsed: string;
   confidence: number;
+  /** Eventos acionáveis para o canal integrador (transbordo, chamado_criado, ...). */
+  triggers: Trigger[];
+}
+
+/**
+ * Consolida a lista de triggers da resposta. O `transbordo` é DERIVADO aqui de
+ * `shouldHandoff` (fonte única) — assim todo caminho que faz handoff (escalate,
+ * fallback por limite de turnos, token [HANDOFF] do LLM) emite o evento sem que
+ * cada um precise lembrar de fazê-lo. Skills adicionam os demais (chamado_criado,
+ * atendimento_finalizado) via `result.triggers`.
+ */
+function finalizeTriggers(result: AgentResult): Trigger[] {
+  const triggers = [...result.triggers];
+  if (result.shouldHandoff && !triggers.some((t) => t.type === "transbordo")) {
+    triggers.push(trigger("transbordo", result.handoffReason));
+  }
+  return triggers;
 }
 
 function intentFromResult(result: AgentResult): string {
@@ -103,6 +120,7 @@ export class Orchestrator {
           intent: "chat",
           agentUsed: "guard",
           confidence: 1.0,
+          triggers: [],
         };
       }
 
@@ -126,7 +144,7 @@ export class Orchestrator {
         `agent=${agentUsed} intent=${intent} handoff=${result.shouldHandoff} ` +
           `tokens=${result.tokensUsed} tools=${JSON.stringify(result.toolsCalled)}`,
       );
-      return { ...result, intent, confidence: 1.0, agentUsed };
+      return { ...result, intent, confidence: 1.0, agentUsed, triggers: finalizeTriggers(result) };
     } catch (e) {
       // O detalhe técnico fica só no log; a resposta usa a mensagem genérica.
       log.exception("Erro no orchestrator:", e);
@@ -142,6 +160,7 @@ export class Orchestrator {
         intent: "error",
         agentUsed: "fallback",
         confidence: 0.0,
+        triggers: [trigger("transbordo", "Erro interno no processamento.")],
       };
     }
   }
