@@ -8,10 +8,6 @@ import { z } from "zod";
 import { searchChunks } from "../rag";
 import { CATEGORY_KNOWLEDGE, registerLocal, SkillResult } from "./base";
 
-// Distância L2 máxima para o atalho determinístico (menor == mais similar).
-// Conservador: só matches muito claros respondem sem LLM (preserva a economia).
-export const SHORTCUT_MAX_DISTANCE = 0.9;
-
 const knowledgeSearchArgs = z.object({
   query: z.string().describe("Pergunta ou termos a buscar na base de conhecimento."),
 });

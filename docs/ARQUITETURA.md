@@ -240,9 +240,9 @@ e `confidence` é 1.0 (a decisão é do LLM).
   erro e devolve vazio (o agente responde pelo prompt base / faz handoff); a
   **ingestão** propaga `EmbeddingUnavailableError` (503 com mensagem clara).
 
-Dois atalhos cortam custo de LLM a zero: match RAG muito forte responde o chunk
-literal (`faq_shortcut`, `SHORTCUT_MAX_DISTANCE = 0.90`), e palavras de
-escalonamento de suporte fazem handoff determinístico.
+Um atalho corta custo de LLM a zero: palavras de escalonamento de suporte fazem
+handoff determinístico (`ESCALATION_KEYWORDS`). Matches RAG passam pelo loop normal
+do `SkilledAgent` para que o LLM formate a resposta com base no chunk encontrado.
 
 ---
 

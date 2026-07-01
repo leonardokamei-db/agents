@@ -2,9 +2,8 @@
  * SkilledAgent: o agente flexível, dirigido por skills (porta `app/agents/skilled.py`).
  *
  * Recebe o CONJUNTO de skills do agente e deixa o LLM decidir qual chamar (function
- * calling). Dois fast-paths determinísticos (0 token) preservam a economia:
- *   a. palavra-chave forte de escalonamento -> escalate_to_human direto;
- *   b. match RAG fortíssimo -> responde o chunk literal.
+ * calling). Um fast-path determinístico (0 token) preserva a economia:
+ *   a. palavra-chave forte de escalonamento -> escalate_to_human direto.
  * Caso geral: loop de function-calling com teto e retries para tool_use_failed.
  */
 
@@ -13,10 +12,9 @@ import { getLogger } from "../logging";
 import { type ChatCompletion, type ChatMessageParam, type ChatTool, type LLMClient, type ToolCall, type ToolResult, ToolUseFailedError, tokensOf } from "../llm";
 import { DEGRADED_CATALOG, ORDER_CONFIRMED } from "../messages";
 import { skilledPrompt } from "../prompts";
-import { sanitizeUntrusted, stripDangerousTokens } from "../security/sanitize";
+import { sanitizeUntrusted } from "../security/sanitize";
 import { makeSentinel, wrapToolData } from "../security/spotlight";
 import { enabledSkillsFor, invokeSkill, type SkillContext, toolSchemasFor } from "../skills";
-import { SHORTCUT_MAX_DISTANCE } from "../skills/knowledge";
 import { ESCALATION_KEYWORDS } from "../skills/support";
 import { wordSet } from "../textutil";
 import { BaseAgent, buildMessages, type ExecuteOptions, parseHandoff } from "./base";
@@ -73,33 +71,8 @@ export class SkilledAgent extends BaseAgent {
       });
     }
 
-    // Fast-path 2: atalho RAG fortíssimo (0 token de LLM; só um embedding).
-    if (this.skillNames.includes("knowledge_search") && this.agent.ragEnabled) {
-      const shortcut = await this.ragShortcut(userMessage);
-      if (shortcut !== null) return shortcut;
-    }
-
     // Caso geral: loop de function-calling sobre as skills habilitadas.
     return this.runLoop(userMessage, history, hardened);
-  }
-
-  // --- fast-path RAG ------------------------------------------------------- //
-  private async ragShortcut(userMessage: string): Promise<AgentResult | null> {
-    const res = await invokeSkill("knowledge_search", { query: userMessage }, this.ctx);
-    const results = (res.data as KnowledgeData | null)?.results ?? [];
-    if (results.length > 0 && results[0].score <= SHORTCUT_MAX_DISTANCE) {
-      const top = results[0];
-      log.info(`RAG shortcut: source=${top.source} dist=${top.score.toFixed(3)}`);
-      // O chunk é devolvido VERBATIM (sem LLM, sem parseHandoff): neutraliza
-      // tokens de template e [HANDOFF] caso o documento esteja envenenado.
-      return agentResult({
-        response: stripDangerousTokens(top.content),
-        source: "faq_shortcut",
-        ragChunksUsed: 1,
-        ragSources: [top.source],
-      });
-    }
-    return null;
   }
 
   // --- loop de tools ------------------------------------------------------- //
