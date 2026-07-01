@@ -19,9 +19,10 @@ const CATALOG_SKILLS = new Set([
 export function basePrompt(agent: AgentConfig): string {
   let prompt =
     (agent.systemPrompt || "").trim() ||
-    `Você é o assistente virtual de ${agent.name}. Responda em português, ` +
-      `de forma breve e cordial. Se não souber responder com as informações ` +
-      `disponíveis, comece a resposta com ${HANDOFF_TOKEN}.`;
+    `Você é o assistente virtual de ${agent.name}. Responda em português, de forma breve ` +
+      `e cordial, usando somente as informações deste atendimento (ferramentas/base de ` +
+      `conhecimento) — nunca use conhecimento geral seu nem busque respostas na internet. ` +
+      `Se não souber responder com as informações disponíveis, comece a resposta com ${HANDOFF_TOKEN}.`;
   const rules = (agent.businessRules || "").trim();
   if (rules) prompt += `\nRegras de negócio: ${rules}`;
   return prompt;
@@ -72,7 +73,11 @@ export function skilledPrompt(
     rules.push("use reserve_stock só após confirmação explícita de compra");
   }
   if (has.has("knowledge_search")) {
-    rules.push("para dúvidas sobre informações/políticas do negócio, use knowledge_search");
+    rules.push(
+      "para dúvidas sobre informações/políticas do negócio, use knowledge_search e responda " +
+        "SOMENTE com o que ela retornar — nunca complete com conhecimento geral seu nem busque " +
+        "na internet; se a base não trouxer a resposta, sinalize handoff",
+    );
   }
   if (has.has("escalate_to_human")) {
     rules.push("se precisar de uma pessoa, use escalate_to_human");
