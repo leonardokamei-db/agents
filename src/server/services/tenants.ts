@@ -45,10 +45,14 @@ export interface MemberCreatedView {
 }
 
 export class TenantService {
-  private readonly tenants = new TenantRepository();
-  private readonly users = new UserRepository();
-  private readonly members = new MembershipRepository();
-  private readonly agents = new AgentRepository();
+  // Repositórios injetados por construtor (com default) — mesmo padrão de
+  // AgentService/AnalyticsService: testável, sem estado global.
+  constructor(
+    private readonly tenants = new TenantRepository(),
+    private readonly users = new UserRepository(),
+    private readonly members = new MembershipRepository(),
+    private readonly agents = new AgentRepository(),
+  ) {}
 
   // --- tenants ------------------------------------------------------------- //
   list(): Promise<Tenant[]> {

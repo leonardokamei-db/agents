@@ -121,12 +121,20 @@ export function registerLocal<S extends z.ZodType>(
   register(new LocalSkill(name, description, argsModel, handler as Handler, category));
 }
 
-export function getSkill(name: string): Skill | undefined {
-  return REGISTRY.get(name);
-}
-
 export function allSkillNames(): string[] {
   return [...REGISTRY.keys()];
+}
+
+/**
+ * Nomes das skills registradas de uma categoria (fonte única: o REGISTRY). Evita
+ * listas hardcoded que dessincronizam quando uma skill nova é adicionada.
+ */
+export function skillNamesByCategory(category: string): Set<string> {
+  const names = new Set<string>();
+  for (const [name, sk] of REGISTRY) {
+    if (sk.category === category) names.add(name);
+  }
+  return names;
 }
 
 /** Metadado de uma skill para a UI (time de UX): nome, descrição e dependências. */

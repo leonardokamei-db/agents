@@ -12,6 +12,7 @@ import { and, count, desc, eq, gte, sql, type SQL } from "drizzle-orm";
 import { db } from "../db/client";
 import { interactions } from "../db/schema";
 import type { InteractionInput } from "../domain";
+import { toIso } from "./util";
 
 export interface InteractionSummary {
   total: number;
@@ -64,8 +65,6 @@ export interface Scope {
 }
 
 const n = (v: unknown): number => Number(v ?? 0) || 0;
-const iso = (d: Date | string | null): string =>
-  d === null ? "" : d instanceof Date ? d.toISOString() : String(d);
 
 export class InteractionRepository {
   /** Grava a telemetria de uma interação, escopada ao agente/tenant. */
@@ -216,7 +215,7 @@ export class InteractionRepository {
       toolsCalled: Array.isArray(r.toolsCalled) ? r.toolsCalled : [],
       ragChunksUsed: r.ragChunksUsed,
       confidence: r.confidence,
-      createdAt: iso(r.createdAt),
+      createdAt: toIso(r.createdAt),
     }));
   }
 }

@@ -4,6 +4,7 @@
 
 import { agentResult, type AgentConfig, type AgentResult, type ChatMessage } from "../domain";
 import type { ChatMessageParam, LLMClient } from "../llm";
+import { HANDOFF_GENERIC } from "../messages";
 import { HANDOFF_TOKEN } from "../prompts";
 import { makeSentinel, wrapUserData } from "../security/spotlight";
 
@@ -51,7 +52,7 @@ export function parseHandoff(text: string): HandoffParse {
   let reason: string | null = null;
   if (shouldHandoff) {
     reason = "O assistente encaminhou para um atendente humano.";
-    if (!clean) clean = "Vou transferir você para um atendente humano para ajudar com isso.";
+    if (!clean) clean = HANDOFF_GENERIC;
   }
   return { shouldHandoff, clean, reason };
 }

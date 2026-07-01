@@ -19,11 +19,9 @@ import { getLogger } from "./logging";
 import { ERROR_INTERNAL, injectionRefusal } from "./messages";
 import { detectInjectionAcross } from "./security/injection";
 import { sanitizeUntrusted } from "./security/sanitize";
+import { CATEGORY_CATALOG, skillNamesByCategory } from "./skills/base";
 
 const log = getLogger("blip-agent.orchestrator");
-
-// Skills de catálogo — só para derivar um "intent" legível dos metadados.
-const CATALOG_SKILLS = new Set(["check_stock", "search_products", "list_products", "reserve_stock", "check_catalog"]);
 
 export interface ProcessResult {
   response: string;
@@ -44,7 +42,8 @@ function intentFromResult(result: AgentResult): string {
   const source = result.source;
   if (source === "faq_shortcut" || source === "llm_rag" || tools.has("knowledge_search")) return "faq";
   if (source === "support_escalation" || tools.has("escalate_to_human") || tools.has("create_ticket")) return "support";
-  for (const s of CATALOG_SKILLS) {
+  // Skills de catálogo (derivadas do registry) -> intent "order".
+  for (const s of skillNamesByCategory(CATEGORY_CATALOG)) {
     if (tools.has(s)) return "order";
   }
   return "chat";

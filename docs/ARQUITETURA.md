@@ -25,23 +25,23 @@ Usuários se vinculam a um tenant por uma **membership** com papel (`owner`/
 
 ```
                           ┌─────────────────────────────┐
-   Navegador / cliente    │        client.html          │
-   (painel admin ou       │  painel admin + chat de teste│
+   Navegador / cliente    │ src/app/page.tsx (painel)    │
+   (painel admin ou       │ + src/app/dashboard (dados)  │
     integração)           └──────────────┬──────────────┘
                                          │ HTTPS (REST + X-Admin-Key / X-API-Key)
                           ┌──────────────▼──────────────┐
-                          │           FastAPI            │  app/main.py
-                          │  middleware: req_id + tenant │  (X-Request-ID)
-                          │  exception handler único     │  AppError → status tipado
+                          │     Next.js (App Router)     │  src/app/v1/**/route.ts
+                          │  wrapper: req_id + log + erro │  http/route.ts (X-Request-ID)
+                          │  AppError → status tipado     │  http/auth.ts (RBAC)
                           │  ┌────────────────────────┐  │
-                          │  │ routers/               │  │  RBAC: admin /
-                          │  │  tenants · agent · chat│  │  owner / member
-                          │  │  knowledge · products  │  │  (deps.py)
+                          │  │ rotas v1/tenants/...   │  │  RBAC: admin /
+                          │  │  tenants · agents · chat│  │  owner / member
+                          │  │  knowledge · products  │  │
                           │  └───────────┬────────────┘  │
                           │     services/ → repositories/ │  regra de negócio → SQL
                           │              ▼               │
                           │       Orchestrator           │  prepara o contexto e
-                          │   (cacheado por AgentConfig) │  delega ao agente
+                          │   (instância por request)    │  delega ao agente
                           │  ┌────────────────────────┐  │
                           │  │ SkilledAgent (flexível)│  │  o LLM escolhe a skill
                           │  │  + FallbackAgent       │  │  (function calling)
@@ -53,14 +53,14 @@ Usuários se vinculam a um tenant por uma **membership** com papel (`owner`/
                           └──────│─────────│──────│──────┘
                                  ▼         ▼      ▼
                           ┌──────────┐ ┌──────┐ ┌─────────┐
-                          │  rag.py  │ │llm.py│ │catalog. │
-                          │ sqlite-  │ │ LLM  │ │ py      │
-                          │ vec      │ └──┬───┘ └────┬────┘
-                          └────┬─────┘    │          │
-                               │          │     ┌────┴─────┐
-                          ┌────▼────┐     │     │ interno  │ SQLite
-                       embeddings   │  LLM API  │   OU     │
-                        (Jina API)──┘           │ externo  │ API REST do cliente
+                          │  rag.ts  │ │llm.ts│ │catalog. │
+                          │ pgvector │ │Claude│ │ ts      │
+                          │ (Chunk-  │ └──┬───┘ └────┬────┘
+                          │  Repo)   │    │          │
+                          └────┬─────┘    │     ┌────┴─────┐
+                               │      Anthropic  │ interno  │ Postgres
+                       embeddings  │    API      │   OU     │
+                        (Jina API)─┘             │ externo  │ API REST do cliente
                                                 └──────────┘
 ```
 
@@ -79,7 +79,7 @@ Mapa de arquivos:
 | Agentes | `src/server/agents/*` | Agente flexível (`SkilledAgent`, dirigido por skills) + fallback estático |
 | Skills | `src/server/skills/*` | Capacidades discretas invocadas via function calling; interface pronta para virar Lambda |
 | Prompts | `src/server/prompts.ts` | System prompts compactos (base + regras só das skills habilitadas) |
-| RAG | `src/server/rag.ts`, `embeddings.ts` | Chunking, ingestão, busca vetorial (pgvector), embeddings |
+| RAG | `src/server/rag.ts`, `embeddings.ts`, `repositories/chunks.ts` | Chunking + orquestração de embeddings (`rag.ts`); toda query da tabela `chunks` (ingestão, KNN pgvector, fontes) vive na `ChunkRepository` |
 | Catálogo | `src/server/catalog.ts` | Produtos (Postgres interno OU API externa) + health check do catálogo |
 | Observabilidade | `src/server/logging.ts` | Correlação de log por `requestId` + `tenant` (AsyncLocalStorage) |
 | Texto | `src/server/textutil.ts` | Normalização/tokenização (`normalize`, `wordSet`, `slugify`) |
@@ -126,16 +126,16 @@ GET    /                                              (público) serve o painel 
 GET    /dashboard                                     (público) painel do time de dados (dados via X-API-Key)
 ```
 
-**Autenticação + RBAC** (`app/routers/deps.py`, ponto 8). Uma só função
-`_resolve_principal` produz um `Principal` tipado (`role` ∈ admin/owner/member):
+**Autenticação + RBAC** (`src/server/http/auth.ts`, ponto 8). Uma só função
+`resolvePrincipal` produz um `Principal` tipado (`role` ∈ admin/owner/member):
 
 - `X-Admin-Key` = `ADMIN_API_KEY` — admin de **plataforma** (cria/exclui tenants; superusuário em qualquer tenant).
 - `X-API-Key` = api_key do **tenant** — `owner` do próprio tenant (chave master/consumo).
 - `X-API-Key` = api_key de **usuário** — papel vindo da membership (`owner` | `member`).
 
-Dependências reutilizáveis: `require_platform_admin`, `require_owner`,
-`require_member`. `member` tem leitura + chat + conteúdo (knowledge/produtos);
-`owner`/`admin` gerenciam agentes e membros (`Principal.can_manage`).
+Guards reutilizáveis: `requirePlatformAdmin`, `requireOwner`,
+`requireMember`. `member` tem leitura + chat + conteúdo (knowledge/produtos);
+`owner`/`admin` gerenciam agentes e membros (`canManage`).
 
 Cada agente tem `id` **globalmente único** (`{tenant}__{slug}`, resolvendo colisão
 de slug entre tenants). O isolamento de dados é por `agent_id` (produtos e chunks
@@ -223,15 +223,18 @@ e `confidence` é 1.0 (a decisão é do LLM).
 
 ## 4. RAG (base de conhecimento)
 
-`app/rag.py` + `app/embeddings.py`:
+`src/server/rag.ts` + `src/server/embeddings.ts` orquestram; toda persistência
+(tabela `chunks`) fica na `ChunkRepository` (`repositories/chunks.ts`):
 
 - **Ingestão:** PDF/texto → chunking por seção (um tópico por chunk; cabeçalhos
-  e rodapés repetidos de PDF são removidos antes via `_strip_repeated_page_lines`)
-  → embedding em lote → grava em `rag.db` (sqlite-vec). Re-ingerir a mesma fonte
-  (`source_name`) substitui os chunks.
-- **Busca:** pergunta → embedding → KNN por distância L2 → top-K chunks **do
-  agente**. O KNN roda no store inteiro, então há over-fetch (`top_k * 3`) e filtro
-  por `agent_id` antes de cortar em `RAG_TOP_K`.
+  e rodapés repetidos de PDF são removidos antes via `stripRepeatedPageLines`)
+  → embedding em lote → grava via `ChunkRepository.replaceSource` (Postgres +
+  pgvector). Re-ingerir a mesma fonte (`source_name`) substitui os chunks
+  (delete + insert atômicos na mesma transação).
+- **Busca:** pergunta → embedding → KNN por distância L2 (operador `<->` do
+  pgvector) → top-K chunks **do agente**. O filtro `WHERE agent_id = ?` entra na
+  própria query e o `ORDER BY` usa a distância direto — sem o over-fetch `x3` que
+  o antigo sqlite-vec exigia; o corte em `RAG_TOP_K` é o `LIMIT`.
 - **Embeddings:** API hospedada da Jina (`jina-embeddings-v3`, 384 dim via
   Matryoshka, multilíngue, vetores L2-normalizados → distância L2 monotônica com
   cosseno). Roda fora do servidor, então o backend fica leve (sem PyTorch). Busca

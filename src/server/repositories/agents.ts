@@ -11,6 +11,7 @@ import { db } from "../db/client";
 import { agents } from "../db/schema";
 import type { AgentConfig, ProductMode } from "../domain";
 import type { AgentCreateData, AgentUpdateData } from "../schemas";
+import { toIso } from "./util";
 
 type AgentRow = typeof agents.$inferSelect;
 
@@ -29,7 +30,7 @@ function toAgentConfig(r: AgentRow): AgentConfig {
     ragEnabled: r.ragEnabled,
     externalProducts: r.externalProducts,
     skills: Array.isArray(r.skills) ? r.skills : [],
-    createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt ?? ""),
+    createdAt: toIso(r.createdAt),
   };
 }
 

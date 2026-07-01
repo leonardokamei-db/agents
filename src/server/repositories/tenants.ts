@@ -8,21 +8,17 @@ import { and, asc, count, eq } from "drizzle-orm";
 import { db } from "../db/client";
 import { memberships, tenants, users } from "../db/schema";
 import type { Membership, MemberRole, Tenant, User } from "../domain";
-
-function iso(d: Date | string | null): string {
-  if (d === null) return "";
-  return d instanceof Date ? d.toISOString() : String(d);
-}
+import { toIso } from "./util";
 
 type TenantRow = typeof tenants.$inferSelect;
 type UserRow = typeof users.$inferSelect;
 type MembershipRow = typeof memberships.$inferSelect;
 
 function toTenant(r: TenantRow): Tenant {
-  return { id: r.id, name: r.name, apiKey: r.apiKey, createdAt: iso(r.createdAt) };
+  return { id: r.id, name: r.name, apiKey: r.apiKey, createdAt: toIso(r.createdAt) };
 }
 function toUser(r: UserRow): User {
-  return { id: r.id, email: r.email, name: r.name ?? "", apiKey: r.apiKey, createdAt: iso(r.createdAt) };
+  return { id: r.id, email: r.email, name: r.name ?? "", apiKey: r.apiKey, createdAt: toIso(r.createdAt) };
 }
 function toMembership(r: MembershipRow): Membership {
   return { tenantId: r.tenantId, userId: r.userId, role: r.role as MemberRole };

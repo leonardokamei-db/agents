@@ -5,16 +5,9 @@
  */
 
 import type { AgentConfig } from "./domain";
+import { CATEGORY_CATALOG, skillNamesByCategory } from "./skills/base";
 
 export const HANDOFF_TOKEN = "[HANDOFF]";
-
-const CATALOG_SKILLS = new Set([
-  "check_stock",
-  "search_products",
-  "list_products",
-  "reserve_stock",
-  "check_catalog",
-]);
 
 export function basePrompt(agent: AgentConfig): string {
   let prompt =
@@ -66,7 +59,7 @@ export function skilledPrompt(
 ): string {
   const has = new Set(skillNames);
   const rules: string[] = [];
-  if ([...CATALOG_SKILLS].some((s) => has.has(s))) {
+  if ([...skillNamesByCategory(CATEGORY_CATALOG)].some((s) => has.has(s))) {
     rules.push("para catálogo, estoque e preços consulte SEMPRE pelas ferramentas — nunca invente dados");
   }
   if (has.has("reserve_stock")) {

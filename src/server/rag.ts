@@ -8,16 +8,14 @@
  * distância L2 direto — sem o over-fetch x3 que o store antigo exigia.
  */
 
-import { and, asc, count, desc, eq, l2Distance, max } from "drizzle-orm";
-
 import * as config from "./config";
-import { db } from "./db/client";
-import { chunks } from "./db/schema";
 import { EmbeddingError, embedDocuments, embedQuery } from "./embeddings";
 import { ValidationError } from "./errors";
 import { getLogger } from "./logging";
+import { ChunkRepository } from "./repositories/chunks";
 
 const log = getLogger("blip-agent.rag");
+const chunkRepo = new ChunkRepository();
 
 const MIN_CHUNK_CHARS = 50;
 
@@ -190,18 +188,11 @@ export async function ingestText(agentId: string, text: string, sourceName: stri
 
   const embeddings = await embedDocuments(chunkList); // fora da transação (rede)
 
-  await db.transaction(async (tx) => {
-    await tx.delete(chunks).where(and(eq(chunks.agentId, agentId), eq(chunks.sourceName, sourceName)));
-    await tx.insert(chunks).values(
-      chunkList.map((content, i) => ({
-        agentId,
-        sourceName,
-        chunkIndex: i,
-        content,
-        embedding: embeddings[i],
-      })),
-    );
-  });
+  await chunkRepo.replaceSource(
+    agentId,
+    sourceName,
+    chunkList.map((content, i) => ({ chunkIndex: i, content, embedding: embeddings[i] })),
+  );
 
   log.info(`Ingestão: ${chunkList.length} chunks (agent=${agentId}, source=${sourceName})`);
   return { chunks_created: chunkList.length, source_name: sourceName, agent_id: agentId };
@@ -227,52 +218,30 @@ export async function searchChunks(
     throw e;
   }
 
-  const distance = l2Distance(chunks.embedding, queryEmbedding);
-  const rows = await db
-    .select({
-      content: chunks.content,
-      sourceName: chunks.sourceName,
-      chunkIndex: chunks.chunkIndex,
-      score: distance,
-    })
-    .from(chunks)
-    .where(eq(chunks.agentId, agentId))
-    .orderBy(asc(distance))
-    .limit(topK);
-
+  const rows = await chunkRepo.search(agentId, queryEmbedding, topK);
   return rows.map((r) => ({
     content: r.content,
     source_name: r.sourceName,
     chunk_index: r.chunkIndex,
-    score: Number(r.score),
+    score: r.score,
   }));
 }
 
 export async function listSources(agentId: string): Promise<SourceInfo[]> {
-  const lastUpdated = max(chunks.createdAt);
-  const rows = await db
-    .select({ sourceName: chunks.sourceName, chunkCount: count(), lastUpdated })
-    .from(chunks)
-    .where(eq(chunks.agentId, agentId))
-    .groupBy(chunks.sourceName)
-    .orderBy(desc(lastUpdated));
+  const rows = await chunkRepo.listSources(agentId);
   return rows.map((r) => ({
     source_name: r.sourceName,
-    chunk_count: Number(r.chunkCount),
-    last_updated: r.lastUpdated instanceof Date ? r.lastUpdated.toISOString() : String(r.lastUpdated ?? ""),
+    chunk_count: r.chunkCount,
+    last_updated: r.lastUpdated,
   }));
 }
 
 export async function deleteSource(agentId: string, sourceName: string): Promise<{ deleted_chunks: number; source_name: string }> {
-  const deleted = await db
-    .delete(chunks)
-    .where(and(eq(chunks.agentId, agentId), eq(chunks.sourceName, sourceName)))
-    .returning({ id: chunks.id });
-  return { deleted_chunks: deleted.length, source_name: sourceName };
+  const deleted = await chunkRepo.deleteSource(agentId, sourceName);
+  return { deleted_chunks: deleted, source_name: sourceName };
 }
 
 /** Remove todos os chunks do agente (usado ao excluir agente/tenant). */
 export async function deleteAgentData(agentId: string): Promise<number> {
-  const deleted = await db.delete(chunks).where(eq(chunks.agentId, agentId)).returning({ id: chunks.id });
-  return deleted.length;
+  return chunkRepo.deleteAll(agentId);
 }

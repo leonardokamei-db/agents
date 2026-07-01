@@ -10,13 +10,9 @@
 import { db } from "../db/client";
 import { tickets } from "../db/schema";
 import type { TicketCreateInput, TicketCriticality, TicketRow } from "../domain";
+import { toIso } from "./util";
 
 type TicketDbRow = typeof tickets.$inferSelect;
-
-function iso(d: Date | string | null): string {
-  if (d === null) return "";
-  return d instanceof Date ? d.toISOString() : String(d);
-}
 
 function toTicketRow(r: TicketDbRow): TicketRow {
   return {
@@ -26,7 +22,7 @@ function toTicketRow(r: TicketDbRow): TicketRow {
     userName: r.userName,
     userEmail: r.userEmail,
     criticality: (r.criticality ?? "normal") as TicketCriticality,
-    createdAt: iso(r.createdAt),
+    createdAt: toIso(r.createdAt),
   };
 }
 
